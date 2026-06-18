@@ -3,6 +3,8 @@ import type { OcxConfig, OcxProviderConfig } from "../types";
 import { loadConfig, resolveEnvValue, saveConfig } from "../config";
 import { getCredential, saveCredential } from "./store";
 import { loginXai, refreshXaiToken } from "./xai";
+import { loginAnthropic, refreshAnthropicToken } from "./anthropic";
+import { loginKimi, refreshKimiToken } from "./kimi";
 
 const REFRESH_SKEW_MS = 60_000;
 
@@ -29,7 +31,30 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderDef> = {
     },
     defaultModel: "grok-4.3",
   },
-  // cycle 2: anthropic, kimi
+  anthropic: {
+    login: (ctrl) => loginAnthropic(ctrl, { importLocal: "fallback" }),
+    refresh: refreshAnthropicToken,
+    providerConfig: {
+      adapter: "anthropic",
+      baseUrl: "https://api.anthropic.com",
+      authMode: "oauth",
+      models: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"],
+      defaultModel: "claude-sonnet-4-5",
+    },
+    defaultModel: "claude-sonnet-4-5",
+  },
+  kimi: {
+    login: (ctrl) => loginKimi(ctrl),
+    refresh: refreshKimiToken,
+    providerConfig: {
+      adapter: "openai-chat",
+      baseUrl: "https://api.kimi.com/coding/v1",
+      authMode: "oauth",
+      models: ["kimi-k2.6", "kimi-k2.5"],
+      defaultModel: "kimi-k2.6",
+    },
+    defaultModel: "kimi-k2.6",
+  },
 };
 
 export function isOAuthProvider(name: string): boolean {

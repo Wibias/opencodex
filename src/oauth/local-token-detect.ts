@@ -3,12 +3,14 @@
  * Read-only: never writes to external credential stores.
  * Ported from jawcode packages/ai/src/utils/oauth/local-token-detect.ts (xAI portion).
  */
+import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { OAuthCredentials } from "./types";
 
 const XAI_AUTH_KEY_PREFIX = "https://auth.x.ai::";
+const CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials";
 
 export function detectGrokCliToken(): OAuthCredentials | null {
   const authPath = join(homedir(), ".grok", "auth.json");
@@ -31,6 +33,38 @@ export function detectGrokCliToken(): OAuthCredentials | null {
       accountId: entry.user_id as string | undefined,
       email: entry.email as string | undefined,
     };
+  } catch {
+    return null;
+  }
+}
+
+/** Read the Claude Code OAuth credential from the OS secure store (macOS keychain / linux secret-tool). */
+function readClaudeSecureStorage(): string | null {
+  try {
+    if (process.platform === "darwin") {
+      return execSync(`security find-generic-password -s "${CLAUDE_KEYCHAIN_SERVICE}" -w`, {
+        encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+    }
+    if (process.platform === "linux") {
+      return execSync(`secret-tool lookup service "${CLAUDE_KEYCHAIN_SERVICE}"`, {
+        encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function detectClaudeCodeToken(): OAuthCredentials | null {
+  const raw = readClaudeSecureStorage();
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw) as { claudeAiOauth?: { accessToken?: string; refreshToken?: string; expiresAt?: number } };
+    const o = data.claudeAiOauth;
+    if (!o?.accessToken || !o?.refreshToken) return null;
+    return { access: o.accessToken, refresh: o.refreshToken, expires: o.expiresAt ?? 0 };
   } catch {
     return null;
   }

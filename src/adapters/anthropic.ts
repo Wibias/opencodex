@@ -9,6 +9,7 @@ import type {
   OcxThinkingContent,
   OcxToolCall,
 } from "../types";
+import { ANTHROPIC_OAUTH_BETA, CLAUDE_CODE_SYSTEM_INSTRUCTION, applyClaudeToolPrefix, stripClaudeToolPrefix } from "../oauth/anthropic";
 
 function messagesToAnthropicFormat(parsed: OcxParsedRequest): { system: string | undefined; messages: unknown[] } {
   const system = parsed.context.systemPrompt?.join("\n\n") || undefined;
@@ -58,22 +59,23 @@ function messagesToAnthropicFormat(parsed: OcxParsedRequest): { system: string |
   return { system, messages };
 }
 
-function toolsToAnthropicFormat(parsed: OcxParsedRequest): unknown[] | undefined {
+function toolsToAnthropicFormat(parsed: OcxParsedRequest, isOAuth: boolean): unknown[] | undefined {
   if (!parsed.context.tools || parsed.context.tools.length === 0) return undefined;
   return parsed.context.tools.map(t => ({
-    name: t.name,
+    name: isOAuth ? applyClaudeToolPrefix(t.name) : t.name,
     description: t.description,
     input_schema: t.parameters,
   }));
 }
 
 export function createAnthropicAdapter(provider: OcxProviderConfig): ProviderAdapter {
+  const isOAuth = provider.authMode === "oauth";
   return {
     name: "anthropic",
 
     buildRequest(parsed: OcxParsedRequest) {
       const { system, messages } = messagesToAnthropicFormat(parsed);
-      const tools = toolsToAnthropicFormat(parsed);
+      const tools = toolsToAnthropicFormat(parsed, isOAuth);
 
       const body: Record<string, unknown> = {
         model: parsed.modelId,
@@ -81,7 +83,15 @@ export function createAnthropicAdapter(provider: OcxProviderConfig): ProviderAda
         stream: parsed.stream,
         max_tokens: parsed.options.maxOutputTokens ?? 8192,
       };
-      if (system) body.system = system;
+      if (isOAuth) {
+        // Claude OAuth (Pro/Max) requires the first system block to be the Claude Code identity.
+        body.system = [
+          { type: "text", text: CLAUDE_CODE_SYSTEM_INSTRUCTION },
+          ...(system ? [{ type: "text", text: system }] : []),
+        ];
+      } else if (system) {
+        body.system = system;
+      }
       if (tools) body.tools = tools;
       if (parsed.options.temperature !== undefined) body.temperature = parsed.options.temperature;
       if (parsed.options.topP !== undefined) body.top_p = parsed.options.topP;
@@ -104,7 +114,12 @@ export function createAnthropicAdapter(provider: OcxProviderConfig): ProviderAda
         "Content-Type": "application/json",
         "anthropic-version": "2023-06-01",
       };
-      if (provider.apiKey) headers["x-api-key"] = provider.apiKey;
+      if (isOAuth) {
+        if (provider.apiKey) headers["Authorization"] = `Bearer ${provider.apiKey}`;
+        headers["anthropic-beta"] = ANTHROPIC_OAUTH_BETA;
+      } else if (provider.apiKey) {
+        headers["x-api-key"] = provider.apiKey;
+      }
       if (provider.headers) Object.assign(headers, provider.headers);
 
       return { url, method: "POST", headers, body: JSON.stringify(body) };
@@ -156,7 +171,7 @@ export function createAnthropicAdapter(provider: OcxProviderConfig): ProviderAda
                 currentBlockType = block.type;
                 if (block.type === "tool_use") {
                   currentToolCallId = block.id ?? "";
-                  currentToolCallName = block.name ?? "";
+                  currentToolCallName = isOAuth ? stripClaudeToolPrefix(block.name ?? "") : (block.name ?? "");
                   yield { type: "tool_call_start", id: currentToolCallId, name: currentToolCallName };
                 }
                 break;
@@ -220,7 +235,7 @@ export function createAnthropicAdapter(provider: OcxProviderConfig): ProviderAda
           if (block.type === "text" && block.text) {
             events.push({ type: "text_delta", text: block.text });
           } else if (block.type === "tool_use") {
-            events.push({ type: "tool_call_start", id: block.id ?? "", name: block.name ?? "" });
+            events.push({ type: "tool_call_start", id: block.id ?? "", name: isOAuth ? stripClaudeToolPrefix(block.name ?? "") : (block.name ?? "") });
             events.push({ type: "tool_call_delta", arguments: JSON.stringify(block.input ?? {}) });
             events.push({ type: "tool_call_end" });
           }
