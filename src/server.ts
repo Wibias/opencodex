@@ -6,10 +6,15 @@ import { createGoogleAdapter } from "./adapters/google";
 import { createOpenAIChatAdapter } from "./adapters/openai-chat";
 import { createResponsesPassthroughAdapter } from "./adapters/openai-responses";
 import { bridgeToResponsesSSE, buildResponseJSON, formatErrorResponse } from "./bridge";
-import { loadConfig, resolveEnvValue } from "./config";
+import { loadConfig } from "./config";
 import { parseRequest } from "./responses/parser";
 import { routeModel } from "./router";
 import { namespacedToolName } from "./types";
+import {
+  clearLoginState, getLoginStatus, getValidAccessToken, isOAuthProvider,
+  resolveModelsAuthToken, startLoginFlow, upsertOAuthProvider,
+} from "./oauth/index";
+import { removeCredential } from "./oauth/store";
 import type { OcxConfig, OcxProviderConfig } from "./types";
 
 const VERSION = "0.0.1";
@@ -108,6 +113,16 @@ async function handleResponses(req: Request, config: OcxConfig, logCtx: { model:
   }
   logCtx.model = route.modelId;
   logCtx.provider = route.providerName;
+
+  // OAuth providers: swap in a fresh access token (auto-refreshed) as the Bearer key, so the
+  // existing openai-chat / anthropic adapters authenticate with no change.
+  if (route.provider.authMode === "oauth") {
+    try {
+      route.provider = { ...route.provider, apiKey: await getValidAccessToken(route.providerName) };
+    } catch (err) {
+      return formatErrorResponse(401, "authentication_error", err instanceof Error ? err.message : String(err));
+    }
+  }
 
   const adapter = resolveAdapter(route.provider);
 
@@ -263,6 +278,34 @@ async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): P
     return jsonResponse(models.map(m => ({ ...m, namespaced: `${m.provider}/${m.id}` })));
   }
 
+  // OAuth login (xai now; anthropic/kimi in cycle 2). Starts the flow and returns the auth URL;
+  // the provider's loopback callback server (inside this process) captures the redirect in the
+  // background, then the credential is persisted. The GUI opens the URL and polls /api/oauth/status.
+  if (url.pathname === "/api/oauth/login" && req.method === "POST") {
+    const body = await req.json().catch(() => ({})) as { provider?: string };
+    const provider = (body.provider ?? "").trim().toLowerCase();
+    if (!isOAuthProvider(provider)) return jsonResponse({ error: "unknown oauth provider" }, 400);
+    try {
+      const { url: authUrl, instructions } = await startLoginFlow(provider);
+      upsertOAuthProvider(config, provider); // mutate LIVE config — routing sees it without restart
+      return jsonResponse({ url: authUrl, instructions });
+    } catch (err) {
+      return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 409);
+    }
+  }
+
+  if (url.pathname === "/api/oauth/status" && req.method === "GET") {
+    const provider = (url.searchParams.get("provider") ?? "").trim().toLowerCase();
+    return jsonResponse(getLoginStatus(provider));
+  }
+
+  if (url.pathname === "/api/oauth/logout" && req.method === "POST") {
+    const provider = (url.searchParams.get("provider") ?? "").trim().toLowerCase();
+    removeCredential(provider);
+    clearLoginState(provider);
+    return jsonResponse({ success: true });
+  }
+
   return null;
 }
 
@@ -270,7 +313,8 @@ async function fetchAllModels(config: OcxConfig) {
   const results: { id: string; provider: string; owned_by?: string }[] = [];
   const fetches = Object.entries(config.providers).map(async ([name, prov]) => {
     if (prov.authMode === "forward") return; // ChatGPT backend has no /models; gpt listed statically
-    const apiKey = resolveEnvValue(prov.apiKey);
+    const apiKey = await resolveModelsAuthToken(name, prov);
+    if (prov.authMode === "oauth" && !apiKey) return; // not logged in → skip silently
     const headers: Record<string, string> = { ...(prov.headers ?? {}) };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
     try {

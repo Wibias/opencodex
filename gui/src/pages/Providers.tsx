@@ -13,6 +13,8 @@ export default function Providers({ apiBase }: { apiBase: string }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState("");
+  const [oauth, setOauth] = useState<{ loggedIn: boolean; email?: string; error?: string }>({ loggedIn: false });
+  const [oauthBusy, setOauthBusy] = useState(false);
 
   const fetchConfig = async () => {
     try {
@@ -47,6 +49,46 @@ export default function Providers({ apiBase }: { apiBase: string }) {
     }
   };
 
+  const refreshOauth = async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/oauth/status?provider=xai`);
+      setOauth(await res.json());
+    } catch { /* ignore */ }
+  };
+  useEffect(() => { refreshOauth(); }, [apiBase]);
+
+  const loginXai = async () => {
+    setOauthBusy(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${apiBase}/api/oauth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "xai" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) { setStatus(data.error || "Login failed to start"); return; }
+      window.open(data.url, "_blank");
+      for (let i = 0; i < 100; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const s = await fetch(`${apiBase}/api/oauth/status?provider=xai`).then(r => r.json()).catch(() => null);
+        if (s?.loggedIn) { setOauth(s); setStatus("✅ Logged in to xai. Run ocx sync to list its models."); fetchConfig(); break; }
+        if (s?.error) { setOauth(s); setStatus(`xai login error: ${s.error}`); break; }
+      }
+    } catch {
+      setStatus("Login request failed");
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
+  const logoutXai = async () => {
+    await fetch(`${apiBase}/api/oauth/logout?provider=xai`, { method: "POST" }).catch(() => {});
+    setOauth({ loggedIn: false });
+    setStatus("Logged out of xai.");
+    fetchConfig();
+  };
+
   if (!config) return <div>Loading...</div>;
 
   return (
@@ -67,7 +109,24 @@ export default function Providers({ apiBase }: { apiBase: string }) {
           )}
         </div>
       </div>
-      {status && <div style={{ fontSize: 13, color: status.includes("Saved") ? "#22c55e" : "#ef4444", marginBottom: 12 }}>{status}</div>}
+      {status && <div style={{ fontSize: 13, color: status.includes("Saved") || status.includes("✅") ? "#22c55e" : "#ef4444", marginBottom: 12 }}>{status}</div>}
+      <div style={{ background: "#f0f9ff", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>OAuth Login</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 13 }}>
+            xAI (Grok): {oauth.loggedIn
+              ? <strong style={{ color: "#22c55e" }}>logged in{oauth.email ? ` (${oauth.email})` : ""}</strong>
+              : <span style={{ color: "#888" }}>not logged in</span>}
+          </span>
+          {oauth.loggedIn ? (
+            <button onClick={logoutXai} style={btnStyle("#888")}>Logout</button>
+          ) : (
+            <button onClick={loginXai} disabled={oauthBusy} style={btnStyle(oauthBusy ? "#9ca3af" : "#3b82f6")}>
+              {oauthBusy ? "Waiting for browser…" : "Login with xAI"}
+            </button>
+          )}
+        </div>
+      </div>
       {editing ? (
         <textarea
           value={draft}

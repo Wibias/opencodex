@@ -14,6 +14,8 @@ Usage:
   ocx stop                    Stop the running proxy server
   ocx sync                    Fetch models from providers and inject into Codex config
   ocx status                  Check proxy server status
+  ocx login <provider>        OAuth login (xai) — opens browser, stores token in ~/.opencodex/auth.json
+  ocx logout <provider>       Remove a stored OAuth login
   ocx help                    Show this help message
 
 Examples:
@@ -112,6 +114,18 @@ switch (command) {
   case "status":
     handleStatus();
     break;
+  case "login": {
+    const { handleLogin } = await import("./oauth/login-cli");
+    await handleLogin(args[1]);
+    break;
+  }
+  case "logout": {
+    const { removeCredential } = await import("./oauth/store");
+    const name = (args[1] ?? "").trim().toLowerCase();
+    removeCredential(name);
+    console.log(`Logged out of ${name || "(none)"}.`);
+    break;
+  }
   case "sync": {
     await syncModelsToCodex();
     break;

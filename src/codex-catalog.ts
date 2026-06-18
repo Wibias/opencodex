@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { resolveEnvValue } from "./config";
+import { resolveModelsAuthToken } from "./oauth/index";
 import type { OcxConfig, OcxProviderConfig } from "./types";
 
 const CODEX_CONFIG_PATH = join(homedir(), ".codex", "config.toml");
@@ -115,7 +115,8 @@ export function buildCatalogEntries(template: RawEntry | null, gptSlugs: string[
 /** Fetch a provider's `/models` (openai-chat style). Skips forward-auth providers. */
 async function fetchProviderModels(name: string, prov: OcxProviderConfig): Promise<CatalogModel[]> {
   if (prov.authMode === "forward") return []; // ChatGPT backend has no /models
-  const apiKey = resolveEnvValue(prov.apiKey);
+  const apiKey = await resolveModelsAuthToken(name, prov);
+  if (prov.authMode === "oauth" && !apiKey) return []; // not logged in → skip
   const headers: Record<string, string> = { ...(prov.headers ?? {}) };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   try {
