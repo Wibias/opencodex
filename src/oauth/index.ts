@@ -30,6 +30,8 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderDef> = {
       defaultModel: "grok-4.3",
       // These don't accept a reasoning/thinking param — never forward reasoning_effort for them.
       noReasoningModels: ["grok-build-0.1", "grok-composer-2.5-fast"],
+      // These are text-only (no image input) — the vision sidecar describes images for them.
+      noVisionModels: ["grok-build-0.1", "grok-composer-2.5-fast"],
     },
     defaultModel: "grok-4.3",
   },
@@ -146,6 +148,11 @@ export function reconcileOAuthProviders(config: OcxConfig): boolean {
     if (JSON.stringify(prov.noReasoningModels) !== JSON.stringify(preset.noReasoningModels)) {
       if (preset.noReasoningModels) prov.noReasoningModels = [...preset.noReasoningModels];
       else delete prov.noReasoningModels;
+      changed = true;
+    }
+    if (JSON.stringify(prov.noVisionModels) !== JSON.stringify(preset.noVisionModels)) {
+      if (preset.noVisionModels) prov.noVisionModels = [...preset.noVisionModels];
+      else delete prov.noVisionModels;
       changed = true;
     }
     // Heal a defaultModel that no longer exists in the refreshed list (e.g. a deprecated snapshot).

@@ -16,6 +16,7 @@ import {
 } from "./oauth/index";
 import type { CatalogModel } from "./codex-catalog";
 import { buildWebSearchTool, planWebSearch, runWithWebSearch } from "./web-search";
+import { describeImagesInPlace, planVisionSidecar } from "./vision";
 import { removeCredential } from "./oauth/store";
 import { listKeyLoginProviders } from "./oauth/key-providers";
 import type { OcxConfig, OcxProviderConfig } from "./types";
@@ -125,6 +126,14 @@ async function handleResponses(req: Request, config: OcxConfig, logCtx: { model:
     } catch (err) {
       return formatErrorResponse(401, "authentication_error", err instanceof Error ? err.message : String(err));
     }
+  }
+
+  // Vision sidecar: the routed model can't see images (provider.noVisionModels). Give it "eyes" —
+  // describe each attached image with a gpt vision model via the ChatGPT passthrough and replace it
+  // with text BEFORE the main call, so the text-only model can reason about it.
+  const visionPlan = planVisionSidecar(config, route.provider, route.modelId, parsed, req.headers);
+  if (visionPlan) {
+    await describeImagesInPlace(parsed, visionPlan.forwardProvider, req.headers, visionPlan.settings);
   }
 
   const adapter = resolveAdapter(route.provider);

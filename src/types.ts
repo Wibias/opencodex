@@ -156,6 +156,17 @@ export interface OcxConfig {
   modelCacheTtlMs?: number;
   /** Web-search sidecar: route web_search for non-OpenAI models through a gpt-mini via ChatGPT passthrough. */
   webSearchSidecar?: OcxWebSearchSidecarConfig;
+  /** Vision sidecar: describe images via a gpt vision model so text-only models can "see" them. */
+  visionSidecar?: OcxVisionSidecarConfig;
+}
+
+export interface OcxVisionSidecarConfig {
+  /** Master switch. Default: enabled when a forward (ChatGPT) provider exists and the caller is logged in. */
+  enabled?: boolean;
+  /** Vision model that describes images (must be a native ChatGPT model with image input). */
+  model?: string;
+  /** Sidecar fetch timeout (ms). */
+  timeoutMs?: number;
 }
 
 export interface OcxWebSearchSidecarConfig {
@@ -190,4 +201,9 @@ export interface OcxProviderConfig {
    * reasoning_effort for these even when Codex selects a reasoning level (e.g. xAI grok-build-0.1).
    */
   noReasoningModels?: string[];
+  /**
+   * Model ids that do NOT accept image inputs. The proxy gives them "eyes" via the vision sidecar:
+   * attached images are described by a gpt vision model and replaced with text before the call.
+   */
+  noVisionModels?: string[];
 }
