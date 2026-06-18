@@ -47,6 +47,10 @@ Wiring: `parser.ts` stashes `parsed._webSearch`; `server.ts` `handleResponses` r
 `enabled` (default on when a forward provider + auth exist) · `model` (gpt-5.4-mini) ·
 `reasoning` (low) · `maxSearchesPerTurn` (3) · `timeoutMs` (30000).
 
+> **Update:** a web-ai-driven hardening pass (SSE-parser robustness incl. the empty-citations fix,
+> prompt-injection boundary, structured-output/JSON guard, vision concurrency + validation, image-web-search
+> for non-vision routes, budget caps) landed afterward — see `05_hardening-pass.md`.
+
 ## Remaining (Phase 3-5, not yet built)
 
 - Structured source/citation passthrough (`annotations` on final `output_text`).
