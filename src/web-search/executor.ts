@@ -8,6 +8,9 @@ export interface SidecarSettings {
   timeoutMs: number;
 }
 
+/** Bound the sidecar's answer length upstream (the tool_result is also clamped downstream). */
+const SIDECAR_MAX_OUTPUT_TOKENS = 1500;
+
 /** A search result, or an `error` string when the search couldn't run (surfaced as a tool result). */
 export type SidecarOutcome = WebSearchResult & { error?: string };
 
@@ -39,6 +42,7 @@ export async function runWebSearch(
     tools: [hostedTool],
     tool_choice: "auto",
     reasoning: { effort: settings.reasoning },
+    max_output_tokens: SIDECAR_MAX_OUTPUT_TOKENS,
     store: false, // the ChatGPT (codex) backend rejects the request otherwise ("Store must be set to false")
     stream: true,
   };
