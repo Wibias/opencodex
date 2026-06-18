@@ -329,7 +329,9 @@ async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): P
   // first 5 routed catalog entries). PUT reorders the injected catalog so the chosen ones lead.
   if (url.pathname === "/api/subagent-models" && req.method === "GET") {
     const models = await fetchAllModels(config);
-    return jsonResponse({ chosen: config.subagentModels ?? [], available: models.map(m => `${m.provider}/${m.id}`) });
+    const disabled = new Set(config.disabledModels ?? []);
+    const available = models.map(m => `${m.provider}/${m.id}`).filter(ns => !disabled.has(ns));
+    return jsonResponse({ chosen: config.subagentModels ?? [], available });
   }
   if (url.pathname === "/api/subagent-models" && req.method === "PUT") {
     let body: { models?: unknown };

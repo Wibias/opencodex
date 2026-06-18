@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import { ANTHROPIC_OAUTH_BETA, CLAUDE_CODE_SYSTEM_INSTRUCTION, applyClaudeToolPrefix, stripClaudeToolPrefix } from "../oauth/anthropic";
 
-function messagesToAnthropicFormat(parsed: OcxParsedRequest): { system: string | undefined; messages: unknown[] } {
+function messagesToAnthropicFormat(parsed: OcxParsedRequest, isOAuth: boolean): { system: string | undefined; messages: unknown[] } {
   const system = parsed.context.systemPrompt?.join("\n\n") || undefined;
   const messages: unknown[] = [];
 
@@ -36,7 +36,7 @@ function messagesToAnthropicFormat(parsed: OcxParsedRequest): { system: string |
             content.push({ type: "thinking", thinking: t.thinking, ...(t.signature ? { signature: t.signature } : {}) });
           } else if (part.type === "toolCall") {
             const tc = part as OcxToolCall;
-            content.push({ type: "tool_use", id: tc.id, name: tc.name, input: tc.arguments });
+            content.push({ type: "tool_use", id: tc.id, name: isOAuth ? applyClaudeToolPrefix(tc.name) : tc.name, input: tc.arguments });
           }
         }
         messages.push({ role: "assistant", content });
@@ -74,7 +74,7 @@ export function createAnthropicAdapter(provider: OcxProviderConfig): ProviderAda
     name: "anthropic",
 
     buildRequest(parsed: OcxParsedRequest) {
-      const { system, messages } = messagesToAnthropicFormat(parsed);
+      const { system, messages } = messagesToAnthropicFormat(parsed, isOAuth);
       const tools = toolsToAnthropicFormat(parsed, isOAuth);
 
       const body: Record<string, unknown> = {
@@ -106,7 +106,7 @@ export function createAnthropicAdapter(provider: OcxProviderConfig): ProviderAda
         if (tc === "auto") body.tool_choice = { type: "auto" };
         else if (tc === "none") body.tool_choice = { type: "none" };
         else if (tc === "required") body.tool_choice = { type: "any" };
-        else if (typeof tc === "object" && "name" in tc) body.tool_choice = { type: "tool", name: tc.name };
+        else if (typeof tc === "object" && "name" in tc) body.tool_choice = { type: "tool", name: isOAuth ? applyClaudeToolPrefix(tc.name) : tc.name };
       }
 
       const url = `${provider.baseUrl}/v1/messages`;

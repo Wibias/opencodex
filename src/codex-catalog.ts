@@ -194,7 +194,7 @@ export async function syncCatalogModels(config: OcxConfig): Promise<{ added: num
     if (!existsSync(OCX_DIR)) mkdirSync(OCX_DIR, { recursive: true });
     copyFileSync(catalogPath, CATALOG_BACKUP_PATH);
   } catch { /* backup best-effort */ }
-  writeFileSync(catalogPath, JSON.stringify(catalog, null, 2) + "\n", "utf-8");
+  atomicWriteFile(catalogPath, JSON.stringify(catalog, null, 2) + "\n");
   return { added: goEntries.length, path: catalogPath };
 }
 

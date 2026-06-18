@@ -28,7 +28,7 @@ interface Preset {
 const PRESETS: Preset[] = [
   { id: "openai", label: "OpenAI (ChatGPT login)", adapter: "openai-responses", baseUrl: "https://chatgpt.com/backend-api/codex", auth: "forward", note: "Uses your codex login — no API key" },
   { id: "xai", label: "xAI Grok", adapter: "openai-chat", baseUrl: "https://api.x.ai/v1", defaultModel: "grok-4.3", auth: "oauth", oauthProvider: "xai", note: "Log in with your Grok account" },
-  { id: "anthropic", label: "Anthropic Claude", adapter: "anthropic", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-20250514", auth: "oauth", oauthProvider: "anthropic", note: "Log in with your Claude account" },
+  { id: "anthropic", label: "Anthropic Claude", adapter: "anthropic", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-5", auth: "oauth", oauthProvider: "anthropic", note: "Log in with your Claude account" },
   { id: "kimi", label: "Kimi", adapter: "openai-chat", baseUrl: "https://api.moonshot.ai/v1", defaultModel: "kimi-k2.6", auth: "oauth", oauthProvider: "kimi", note: "Log in with your Kimi account" },
   { id: "openai-apikey", label: "OpenAI (API key)", adapter: "openai-responses", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-5.5", auth: "key" },
   { id: "opencode-go", label: "opencode zen", adapter: "openai-chat", baseUrl: "https://opencode.ai/zen/go/v1", defaultModel: "kimi-k2.6", auth: "key", note: "GLM, DeepSeek, Kimi, Qwen, MiMo…" },
