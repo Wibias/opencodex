@@ -32,13 +32,21 @@ Commits `1528114` (bridge) + `e2ae0b8` (server).
   upstream `fetch`, and passes `() => upstream.abort()` as the bridge's `onCancel`. A client
   disconnect now aborts the upstream instead of leaking the connection / draining tokens.
 
+### P0c — RC2 (passthrough path): abort the upstream on client disconnect
+
+Commit `955f3dd`. The passthrough branch now passes `signal` to the upstream fetch and relays
+the body through `relayWithAbort` (`src/server.ts`), whose `cancel()` calls `upstream.abort()`.
+A directly-relayed body does not propagate the consumer's cancel to a signalled fetch (verified
+with a `Bun.serve` probe and `tests/passthrough-abort.test.ts`), so this closes the passthrough
+half of RC2 with byte-verbatim fidelity preserved.
+
 ## RC status after P0
 
 | ID | Cause | Status |
 |----|-------|--------|
 | RC1 | Missing terminal `response.completed` (bridge) | **Fixed** (`1528114`) + unit-tested |
 | RC2 | Double-throw on disconnect | **Fixed** (`1528114`) |
-| RC2 | Upstream not aborted on disconnect (bridge path) | **Fixed** (`e2ae0b8`); passthrough path deferred |
+| RC2 | Upstream not aborted on disconnect (both paths) | **Fixed** — bridge (`e2ae0b8`), passthrough `relayWithAbort` (`955f3dd`, Bun.serve-probe verified) |
 | RC3 | No idle heartbeat | **Deferred** (needs production `idle_timeout` value) |
 | RC4 | Bridge error envelope | Fixed in 100.5 (`a0d4ec9`); `rate_limit_exceeded` note stands |
 | RC5 | Passthrough header fidelity | Mitigated in 100.5; regression already covered by `tests/error-fidelity.test.ts` |
@@ -60,9 +68,6 @@ Commits `1528114` (bridge) + `e2ae0b8` (server).
   `eventsource_stream`) — the keep-alive must be a real, parser-ignored event
   (`response.heartbeat`), not a comment. Deferred pending the user's provider `idle_timeout`
   and maintainer sign-off on the new wire event (`30_patch-direction.md` §P1a, revised).
-- **RC2 passthrough abort.** The passthrough path returns `upstreamResponse.body` directly;
-  whether client-cancel propagates to abort the upstream depends on Bun's stream/fetch
-  behavior — needs a live check before wiring (avoid breaking high-fidelity passthrough).
 - **P2** (rate-limit code mapping, dropped-frame logging) — opportunistic; current behavior
   is acceptable.
 
