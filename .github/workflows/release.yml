@@ -27,7 +27,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # npm provenance attestation
+  id-token: write # OIDC auth for Trusted Publishing + automatic provenance attestation
 
 concurrency:
   group: release
@@ -47,12 +47,16 @@ jobs:
         with:
           bun-version: latest
 
-      # node + npm perform the actual publish (with provenance); registry-url wires NODE_AUTH_TOKEN.
+      # node + npm perform the actual publish. registry-url points npm at the public registry.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
+
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1 — the runner's bundled npm may be older.
+      - name: Use latest npm
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: bun install
@@ -66,18 +70,20 @@ jobs:
             exit 1;
           }
 
-      # `npm publish` runs prepublishOnly (typecheck + build the GUI into gui/dist) first, so even a
-      # dry-run fully verifies the build. --provenance attests the tarball was built in this CI run.
+      # Tokenless publish via Trusted Publishing (OIDC) — NO NPM_TOKEN secret. npm auto-detects the
+      # OIDC environment (`id-token: write` above) and generates provenance automatically, so neither a
+      # token nor `--provenance` is needed. `npm publish` runs prepublishOnly first (typecheck + build
+      # the GUI into gui/dist), so even a dry-run fully verifies the build.
+      # PREREQUISITE: configure the Trusted Publisher for this repo + workflow on npmjs.com — possible
+      # only AFTER the package's first version exists (do the first publish locally, see the runbook).
       - name: Publish (or dry-run)
         run: |
           if [ "${{ inputs.dry-run }}" = "true" ]; then
             echo "::notice::DRY RUN — building + packing, not publishing"
-            npm publish --dry-run --tag "${{ inputs.tag }}" --access public --provenance
+            npm publish --dry-run --tag "${{ inputs.tag }}" --access public
           else
-            npm publish --tag "${{ inputs.tag }}" --access public --provenance
+            npm publish --tag "${{ inputs.tag }}" --access public
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Confirm the registry actually has the new version (real publishes only).
       - name: Post-publish registry smoke

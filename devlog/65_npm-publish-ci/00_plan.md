@@ -1,38 +1,49 @@
-# npm release CI + runbook (jawcode-style)
+# npm release CI + runbook (jawcode-style, Trusted Publishing / OIDC)
 
 ## Why
 `bun/npm install -g opencodex` install from the **npm registry**, not GitHub — so opencodex must be
-**published to npm**. Modeled on jawcode's release flow (minus its monorepo/native-binary bits).
+published to npm. Modeled on jawcode's release flow, but using **npm Trusted Publishing (OIDC)** so CI
+publishes **without a long-lived `NPM_TOKEN` secret** (npm's recommended approach — short-lived OIDC
+credentials, provenance generated automatically, nothing to leak).
 
-## How jawcode does it (reference)
-`jawcode/.github/workflows/release.yml` is a **`workflow_dispatch`** job with `version` + `tag`
-(latest/preview) + `dry-run` (default **true**) inputs: it verifies package.json matches the input,
-then `npm publish --tag … --access public --provenance`, then a post-publish registry smoke. A local
-`bun scripts/release.ts <version>` does preflight → bump → commit → push → dispatch → watch.
+## What shipped
+- `.github/workflows/release.yml` — `workflow_dispatch` (inputs: `version` / `tag` latest|preview /
+  `dry-run` default true). Verifies `tag == package.json`, upgrades npm (OIDC needs **npm ≥ 11.5.1**),
+  then **tokenless** `npm publish` via OIDC (`id-token: write`) — no `NPM_TOKEN`, no `--provenance`
+  (automatic). Post-publish `npm view` smoke.
+- `scripts/release.ts` (+ `bun run release` / `release:watch`) — preflight → bump → commit → push →
+  dispatch → watch. Not shipped in the tarball.
 
-## What shipped (opencodex)
-- **`.github/workflows/release.yml`** — `workflow_dispatch` with `version` / `tag` (latest|preview) /
-  `dry-run` (default true). Verifies the tag input == package.json, then `npm publish` (prepublishOnly
-  builds the GUI into gui/dist first) with `--provenance`, then `npm view` smoke on real publishes.
-  Replaces the old tag-push `publish-npm.yml`.
-- **`scripts/release.ts`** (+ `bun run release` / `release:watch`) — single-package version of
-  jawcode's helper: clean-main + typecheck preflight → `npm version --no-git-tag-version` → commit →
-  push → `gh workflow run release.yml` (dry-run unless `--publish`) → watch. Not shipped in the tarball.
-- Package already publish-ready (`files`, bin `#!/usr/bin/env bun`, `engines.bun`, `prepublishOnly`).
+## One-time setup (owner) — Trusted Publishing
+⚠️ A Trusted Publisher can only be configured **after** the package has ≥1 published version. So the
+very first publish of the new name is done locally; everything after is tokenless CI.
 
-## One-time setup (owner)
-1. npm **Automation** (or Granular all-packages Read+Write) token: npmjs.com → Access Tokens.
-2. Add it as the repo secret **`NPM_TOKEN`**: GitHub → Settings → Secrets and variables → Actions.
+1. **First publish (local, one-time)** — claims `opencodex`, no token stored anywhere:
+   ```bash
+   npm login                                # browser auth
+   npm version 0.1.0 --no-git-tag-version   # set the first version
+   git commit -am "release: v0.1.0" && git push origin main
+   npm publish --access public              # prepublishOnly builds the GUI first
+   ```
+2. **Configure the Trusted Publisher** — npmjs.com → the `opencodex` package → **Settings → Trusted
+   Publisher → GitHub Actions**:
+   - Organization or user: `lidge-jun`
+   - Repository: `opencodex`
+   - Workflow filename: `release.yml`
+   - Environment name: *(leave blank)*
+3. Done — every future release publishes tokenlessly via OIDC. (No `NPM_TOKEN` secret anywhere.)
 
-## Releasing
-**Easiest (local helper):**
+## Releasing (after setup)
 ```bash
-bun run release 0.1.0            # preflight → bump → commit → push → DRY-RUN dispatch → watch
-bun run release 0.1.0 --publish  # …and actually publish (after the dry-run looks good)
+bun run release 0.2.0            # bump + commit + push + DRY-RUN dispatch + watch
+bun run release 0.2.0 --publish  # …and actually publish (tokenless OIDC)
 ```
-**Manual (GitHub UI):** bump `version` in package.json on main, commit/push, then Actions → **Release**
-→ Run workflow → enter the version, pick the dist-tag, leave **dry-run on** first, re-run with dry-run
-off to publish.
+Or: Actions → **Release** → Run workflow → version + dist-tag, dry-run on first, then off to publish.
 
-After a real publish: `bun install -g opencodex` / `npm install -g opencodex` work (package page:
-https://www.npmjs.com/package/opencodex). opencodex is bun-native, so installers still need **bun** on PATH.
+After a real publish, `bun install -g opencodex` / `npm install -g opencodex` (and `ocx update`) work.
+opencodex is bun-native, so installers still need **bun** on PATH. Page: https://www.npmjs.com/package/opencodex
+
+## Why not an automation token?
+npm now warns that classic automation/granular tokens for CI carry security risk (a leaked write token
+publishes arbitrary versions). Trusted Publishing replaces it with per-run OIDC credentials scoped to
+this exact repo+workflow — nothing long-lived to store or steal.
