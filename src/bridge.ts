@@ -41,6 +41,7 @@ export function bridgeToResponsesSSE(
   toolNsMap?: Map<string, { namespace: string; name: string }>,
   freeformToolNames?: Set<string>,
   toolSearchToolNames?: Set<string>,
+  onCancel?: () => void,
 ): ReadableStream<Uint8Array> {
   // Freeform/custom tools (apply_patch) carry their body in `input`; the model is given a
   // function with `{input:string}`, so unwrap it here when relaying back as a custom_tool_call.
@@ -55,13 +56,29 @@ export function bridgeToResponsesSSE(
   const encoder = new TextEncoder();
   const responseId = `resp_${uuid()}`;
   let seq = 0;
+  // Set once the client is gone (cancel) or an enqueue throws on a torn-down controller, so we
+  // never enqueue again and never throw a second time inside start() — the RC2 double-throw that
+  // otherwise surfaced as proxy-side stream noise on every client disconnect.
+  let closed = false;
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       const emit = (name: string, data: Record<string, unknown>) => {
-        controller.enqueue(encoder.encode(sseEvent(name, { type: name, sequence_number: seq++, ...data })));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(sseEvent(name, { type: name, sequence_number: seq++, ...data })));
+        } catch {
+          closed = true;
+        }
       };
-      const emitDone = () => controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      const emitDone = () => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        } catch {
+          closed = true;
+        }
+      };
 
       const createdAt = Math.floor(Date.now() / 1000);
       let outputIndex = 0;
@@ -166,6 +183,12 @@ export function bridgeToResponsesSSE(
         outputIndex++;
         currentToolCall = null;
       };
+
+      // RC1: guarantee the Responses stream always ends with exactly one terminal event. Set true
+      // when a done/error/catch terminal is emitted; if the adapter generator returns without one
+      // we synthesize response.completed below, so Codex never hits the parser's
+      // "stream closed before response.completed" (responses.rs) -> ApiError::Stream.
+      let terminated = false;
 
       try {
         for await (const event of events) {
@@ -276,6 +299,7 @@ export function bridgeToResponsesSSE(
               emit("response.completed", {
                 response: { ...responseSnapshot("completed", finishedItems), usage: responsesUsage(event.usage) },
               });
+              terminated = true;
               break;
             }
             case "error": {
@@ -290,6 +314,7 @@ export function bridgeToResponsesSSE(
                   last_error: responseError(502, "upstream_error", event.message),
                 },
               });
+              terminated = true;
               break;
             }
           }
@@ -302,10 +327,34 @@ export function bridgeToResponsesSSE(
             last_error: responseError(500, "proxy_error", err instanceof Error ? err.message : String(err)),
           },
         });
+        terminated = true;
+      }
+
+      if (!terminated) {
+        // The adapter generator ended without a done/error event (e.g. an upstream that closes
+        // after message_stop, or a routed provider that drops the connection cleanly). Close any
+        // open items and synthesize a clean completion so the stream is never terminal-less.
+        if (currentMsg) closeCurrentMessage();
+        if (currentReasoning) closeCurrentReasoning();
+        if (currentRawReasoning) closeCurrentRawReasoning();
+        if (currentToolCall) closeCurrentToolCall();
+        emit("response.completed", {
+          response: { ...responseSnapshot("completed", finishedItems), usage: responsesUsage(undefined) },
+        });
       }
 
       emitDone();
-      controller.close();
+      try {
+        controller.close();
+      } catch {
+        /* already closed (e.g. client cancelled) */
+      }
+    },
+    cancel() {
+      // Client (Codex) disconnected. Stop emitting and let the caller abort the upstream fetch so a
+      // cancelled turn does not leak the upstream stream or keep draining tokens (RC2).
+      closed = true;
+      onCancel?.();
     },
   });
 }
