@@ -38,20 +38,13 @@ export function detectGrokCliToken(): OAuthCredentials | null {
   }
 }
 
-/** Read the Claude Code OAuth credential from the OS secure store (macOS keychain / linux secret-tool). */
+/** Read the Claude Code OAuth credential from macOS Keychain. Windows/Linux: use `ocx login`. */
 function readClaudeSecureStorage(): string | null {
+  if (process.platform !== "darwin") return null;
   try {
-    if (process.platform === "darwin") {
-      return execSync(`security find-generic-password -s "${CLAUDE_KEYCHAIN_SERVICE}" -w`, {
-        encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"],
-      }).trim();
-    }
-    if (process.platform === "linux") {
-      return execSync(`secret-tool lookup service "${CLAUDE_KEYCHAIN_SERVICE}"`, {
-        encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"],
-      }).trim();
-    }
-    return null;
+    return execSync(`security find-generic-password -s "${CLAUDE_KEYCHAIN_SERVICE}" -w`, {
+      encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
   } catch {
     return null;
   }
