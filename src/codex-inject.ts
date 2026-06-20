@@ -50,6 +50,17 @@ function stripExistingModelProvider(content: string): string {
   return out.join("\n");
 }
 
+function stripRootContextWindowOverrides(content: string): string {
+  const lines = content.split("\n");
+  const firstTable = lines.findIndex(l => /^\s*\[/.test(l));
+  return lines
+    .filter((line, i) => {
+      const isRoot = firstTable === -1 || i < firstTable;
+      return !isRoot || !/^\s*model_(?:context_window|auto_compact_token_limit)\s*=/.test(line);
+    })
+    .join("\n");
+}
+
 /**
  * Insert `model_provider = "opencodex"` at the document ROOT — immediately before the first table
  * header (TOML root keys must precede all tables). If there are no tables, append it to the root body.
@@ -170,6 +181,7 @@ export async function injectCodexConfig(port: number, config?: OcxConfig): Promi
   }
   content = removeProfileSection(content);
   content = stripExistingModelProvider(content);
+  content = stripRootContextWindowOverrides(content);
   content = normalizeServiceTier(content);
   content = ensureFastModeFeature(content);
 
@@ -227,6 +239,7 @@ export function stripOpencodexConfig(content: string): string {
   // Regex (not exact-string) removal so compact `model_provider="opencodex"` is stripped too —
   // must match the detection regex above, or a detected line could survive un-removed.
   out = out.split("\n").filter(l => !/^\s*model_provider\s*=\s*"opencodex"\s*$/.test(l)).join("\n");
+  out = stripRootContextWindowOverrides(out);
   out = stripDefaultCatalogPath(out);
   return out.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
@@ -242,6 +255,8 @@ export function removeCodexConfig(): { success: boolean; message: string } {
   const content = readFileSync(CODEX_CONFIG_PATH, "utf-8");
   const had = hasOpencodexRouting(content);
   if (had) {
+    atomicWriteFile(CODEX_CONFIG_PATH, stripOpencodexConfig(content));
+  } else if (stripRootContextWindowOverrides(content) !== content) {
     atomicWriteFile(CODEX_CONFIG_PATH, stripOpencodexConfig(content));
   }
   if (existsSync(CODEX_PROFILE_PATH)) unlinkSync(CODEX_PROFILE_PATH);
