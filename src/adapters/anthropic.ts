@@ -1,4 +1,5 @@
 import type { ProviderAdapter } from "./base";
+import { debugDroppedFrame } from "../debug";
 import type {
   AdapterEvent,
   OcxAssistantMessage,
@@ -226,6 +227,7 @@ export function createAnthropicAdapter(provider: OcxProviderConfig): ProviderAda
             try {
               data = JSON.parse(payload) as Record<string, unknown>;
             } catch {
+              debugDroppedFrame("anthropic", payload);
               continue;
             }
 

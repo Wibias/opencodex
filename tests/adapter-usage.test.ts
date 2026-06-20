@@ -93,3 +93,40 @@ describe("adapter reasoning and usage details", () => {
     });
   });
 });
+
+describe("usage and content retention (F2)", () => {
+  test("openai-chat keeps content when usage and choices share one chunk", async () => {
+    const adapter = createOpenAIChatAdapter(provider);
+    const response = new Response([
+      'data: {"choices":[{"delta":{"content":"final"}}],"usage":{"prompt_tokens":3,"completion_tokens":2}}\n\n',
+      "data: [DONE]\n\n",
+    ].join(""));
+    const events = [];
+    for await (const event of adapter.parseStream(response)) events.push(event);
+    expect(events).toContainEqual({ type: "text_delta", text: "final" });
+    expect(events.at(-1)).toEqual({ type: "done", usage: { inputTokens: 3, outputTokens: 2 } });
+  });
+
+  test("openai-chat retains usage on EOF without [DONE]", async () => {
+    const adapter = createOpenAIChatAdapter(provider);
+    const response = new Response([
+      'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n',
+      'data: {"usage":{"prompt_tokens":5,"completion_tokens":1}}\n\n',
+    ].join(""));
+    const events = [];
+    for await (const event of adapter.parseStream(response)) events.push(event);
+    expect(events.at(-1)).toEqual({ type: "done", usage: { inputTokens: 5, outputTokens: 1 } });
+  });
+
+  test("google emits exactly one done carrying usage", async () => {
+    const adapter = createGoogleAdapter({ ...provider, adapter: "google" });
+    const response = new Response(
+      'data: {"candidates":[{"content":{"parts":[{"text":"a"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2}}\n\n',
+    );
+    const events = [];
+    for await (const event of adapter.parseStream(response)) events.push(event);
+    const dones = events.filter(e => e.type === "done");
+    expect(dones.length).toBe(1);
+    expect(dones[0]).toEqual({ type: "done", usage: { inputTokens: 4, outputTokens: 2 } });
+  });
+});

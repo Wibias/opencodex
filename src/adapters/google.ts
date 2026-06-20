@@ -1,4 +1,5 @@
 import type { ProviderAdapter } from "./base";
+import { debugDroppedFrame } from "../debug";
 import type {
   AdapterEvent,
   OcxAssistantMessage,
@@ -124,6 +125,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let pendingUsage: OcxUsage | undefined;
 
       try {
         while (true) {
@@ -140,7 +142,14 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             if (!payload) continue;
 
             let chunk: Record<string, unknown>;
-            try { chunk = JSON.parse(payload); } catch { continue; }
+            try { chunk = JSON.parse(payload); } catch { debugDroppedFrame("google", payload); continue; }
+
+            // Inline provider error inside a 200 stream → terminal error (see openai-chat.ts).
+            if (chunk.error) {
+              const err = chunk.error as { message?: string } | undefined;
+              yield { type: "error", message: err?.message ?? "upstream error" };
+              return;
+            }
 
             const candidates = chunk.candidates as { content?: { parts?: unknown[] }; finishReason?: string }[] | undefined;
             if (!candidates?.length) continue;
@@ -161,15 +170,14 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             }
 
             const usageMeta = chunk.usageMetadata as Record<string, number> | undefined;
-            if (candidates[0].finishReason && usageMeta) {
-              yield {
-                type: "done",
-                usage: usageFromGemini(usageMeta),
-              };
+            if (usageMeta) {
+              // Accumulate usage; emit a single terminal `done` post-loop so usage is never
+              // dropped on EOF and the stream never yields two `done` events.
+              pendingUsage = usageFromGemini(usageMeta);
             }
           }
         }
-        yield { type: "done" };
+        yield { type: "done", usage: pendingUsage };
       } finally {
         reader.releaseLock();
       }

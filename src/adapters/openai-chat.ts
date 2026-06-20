@@ -1,4 +1,5 @@
 import type { ProviderAdapter } from "./base";
+import { debugDroppedFrame } from "../debug";
 import type { AdapterEvent, OcxAssistantMessage, OcxContentPart, OcxMessage, OcxParsedRequest, OcxProviderConfig, OcxTextContent, OcxToolCall, OcxUsage } from "../types";
 import { namespacedToolName } from "../types";
 import { contentPartsToText } from "./image";
@@ -190,12 +191,25 @@ export function createOpenAIChatAdapter(provider: OcxProviderConfig): ProviderAd
             try {
               chunk = JSON.parse(payload) as Record<string, unknown>;
             } catch {
+              debugDroppedFrame("openai-chat", payload);
               continue;
             }
 
+            // A 200/OK chat-completions stream may carry an inline provider error envelope
+            // instead of a clean [DONE]. Surface it as a terminal error so the bridge emits a
+            // classified response.failed (bridge case "error") — never a truncated completion.
+            if (chunk.error) {
+              const err = chunk.error as { message?: string } | undefined;
+              if (currentToolCallId) yield { type: "tool_call_end" };
+              yield { type: "error", message: err?.message ?? "upstream error" };
+              return;
+            }
+
             if (chunk.usage) {
+              // Record usage but keep parsing: some providers send usage and the final content
+              // delta in the SAME chunk; a `continue` here would drop that content. The choices
+              // guard below no-ops a usage-only chunk.
               pendingUsage = usageFromOpenAIChat(chunk.usage as Record<string, unknown>);
-              continue;
             }
 
             const choices = chunk.choices as { delta?: Record<string, unknown>; finish_reason?: string }[] | undefined;
@@ -236,7 +250,8 @@ export function createOpenAIChatAdapter(provider: OcxProviderConfig): ProviderAd
         if (currentToolCallId) {
           yield { type: "tool_call_end" };
         }
-        yield { type: "done" };
+        // EOF without a [DONE] sentinel: still surface any usage accumulated mid-stream.
+        yield { type: "done", usage: pendingUsage };
       } finally {
         reader.releaseLock();
       }
