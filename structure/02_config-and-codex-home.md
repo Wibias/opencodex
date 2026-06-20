@@ -1,4 +1,4 @@
-# Codex Integration SOT
+# Config And Codex Home SOT
 
 ## Codex home
 
@@ -35,25 +35,11 @@ blocks, stale root context-window overrides, and stale opencodex catalog paths b
 
 `supports_websockets = true` is appended only when `websocketsEnabled(config)` returns true.
 
-## Shared catalog
+## Profile and fast tier
 
-`src/codex-catalog.ts` builds a shared Codex-shaped catalog for CLI, TUI, App, and SDK. It:
-
-- preserves native OpenAI entries from the live catalog or static fallback;
-- clones a native template for routed `provider/model` entries;
-- forces strict Codex catalog fields required by the current parser;
-- hides `disabledModels`;
-- strips native-only service tier and WebSocket metadata unless explicitly enabled;
-- backs up the pristine catalog once to `~/.opencodex/catalog-backup.json`;
-- invalidates `$CODEX_HOME/models_cache.json` when model visibility changes.
-
-Codex App model picker visibility comes from this shared catalog, not from patching the App.
-
-## Subagents
-
-Codex `spawn_agent` advertises only the highest-priority first five catalog models. `subagentModels`
-is capped at five ids and may contain routed `provider/model` slugs or native model slugs. Startup
-seeds native GPT defaults only when the field is unset; an explicit empty list persists.
+opencodex also writes `$CODEX_HOME/opencodex.config.toml` as an explicit profile target. Codex config
+uses `service_tier = "fast"` and `[features].fast_mode = true`; catalog/request tier metadata may use
+`priority`. Do not collapse these spellings into one value.
 
 ## Restore
 

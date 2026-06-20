@@ -5,12 +5,15 @@ belong in `docs-site/`; historical investigations belong in `docs/`.
 
 ## Reading order
 
-| Folder | Purpose |
+| File | Purpose |
 | --- | --- |
-| [`runtime/`](runtime/) | Process lifecycle, CLI, server endpoints, config, providers, adapters, GUI API. |
-| [`codex/`](codex/) | `CODEX_HOME`, config injection, shared catalog, Codex App, subagent ordering. |
-| [`transports/`](transports/) | Responses HTTP/SSE, optional WebSocket advertisement, sidecars, native passthrough. |
-| [`docs-release/`](docs-release/) | Public docs site, GitHub Pages publishing, release/build ownership. |
+| [`00_overview.md`](00_overview.md) | Product boundary, local state, and non-negotiable invariants. |
+| [`01_runtime.md`](01_runtime.md) | Process lifecycle, CLI, server endpoints, config, providers, adapters. |
+| [`02_config-and-codex-home.md`](02_config-and-codex-home.md) | `CODEX_HOME`, config injection, profile files, restore rules. |
+| [`03_catalog-and-subagents.md`](03_catalog-and-subagents.md) | Shared Codex catalog, Codex App picker, subagent ordering. |
+| [`04_transports-and-sidecars.md`](04_transports-and-sidecars.md) | Responses HTTP/SSE, WebSocket opt-in, sidecars, compatibility guards. |
+| [`05_gui-and-management-api.md`](05_gui-and-management-api.md) | Dashboard serving and `/api/*` management surface. |
+| [`06_docs-and-release.md`](06_docs-and-release.md) | Public docs site, GitHub Pages, README ownership, release flow. |
 
 ## Product boundary
 
@@ -49,3 +52,9 @@ configured `defaultProvider`.
 - Routed model slugs use `provider/model`.
 - Codex `spawn_agent` visibility depends on the first five featured catalog entries.
 - `ocx stop`, `ocx restore`, and service stop/uninstall must leave native Codex usable.
+
+## Writing rule
+
+Keep this directory flat. Add or extend lexicographically ordered `NN_topic.md` files; do not add
+subdirectories. If one file grows too broad, split the next stable topic into the next unused number
+instead of creating nested folders.

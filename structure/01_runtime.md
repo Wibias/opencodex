@@ -32,12 +32,3 @@ uninstall still restore.
 
 Adapter output must stay in internal `AdapterEvent` form until `bridge.ts` converts it back to
 Responses SSE or WebSocket frames.
-
-## Dashboard API
-
-The bundled React dashboard is served from `gui/dist` by the same proxy. `ocx gui` starts the proxy
-when needed and opens `http://localhost:<port>`.
-
-Management endpoints live in `src/server.ts` under `/api/*`: config get/put, provider CRUD, models,
-disabled models, OAuth login/status/logout, key-provider presets, subagent models, and logs. `GET
-/api/config` masks API keys; provider writes must not round-trip masked keys as real secrets.
