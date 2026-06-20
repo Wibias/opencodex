@@ -22,6 +22,26 @@ export const FORWARD_HEADERS = [
   "x-responsesapi-include-timing-metrics",
 ];
 
+function sanitizeReasoningInputContent(body: unknown): unknown {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const raw = body as Record<string, unknown>;
+  if (!Array.isArray(raw.input)) return body;
+
+  let changed = false;
+  const input = raw.input.map(item => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+    const rec = item as Record<string, unknown>;
+    if (rec.type !== "reasoning" || !Array.isArray(rec.content) || rec.content.length === 0) return item;
+    changed = true;
+    // Routed models can produce raw `reasoning_text` output items. Codex echoes those in later
+    // native GPT requests, but ChatGPT's Responses backend accepts reasoning input only with empty
+    // `content`; keep summaries/ids and drop the raw content so native passthrough does not 400.
+    return { ...rec, content: [] };
+  });
+
+  return changed ? { ...raw, input } : body;
+}
+
 export function createResponsesPassthroughAdapter(provider: OcxProviderConfig): ProviderAdapter & { passthrough: true } {
   return {
     name: "openai-responses",
@@ -49,7 +69,7 @@ export function createResponsesPassthroughAdapter(provider: OcxProviderConfig): 
         url,
         method: "POST",
         headers,
-        body: JSON.stringify(parsed._rawBody),
+        body: JSON.stringify(sanitizeReasoningInputContent(parsed._rawBody)),
       };
     },
 
