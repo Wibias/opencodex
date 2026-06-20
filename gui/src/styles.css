@@ -76,6 +76,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 
 ::selection { background: var(--accent-soft); }
 
+/* native controls (checkbox/radio) follow the accent instead of browser blue */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
 /* scrollbars */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; border: 2px solid var(--bg); }
@@ -190,7 +193,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
 .tbl tbody tr:last-child td { border-bottom: none; }
 .tbl tbody tr:hover td { background: var(--hover); }
 .tbl .num { text-align: right; font-family: var(--mono); }
-.tbl-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.tbl-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; }
 
 /* ---- inputs ---- */
 .input, textarea.input {
@@ -258,7 +261,7 @@ select.input { appearance: none; }
   .sidebar {
     position: sticky; top: 0; z-index: 20; height: auto;
     flex-flow: row wrap; align-items: center; gap: 0;
-    padding: 0 10px;
+    padding: 0 10px; min-width: 0;   /* grid item: don't let nav content force the column wide */
     border-right: none; border-bottom: 1px solid var(--border);
     background: var(--rail);
   }
@@ -268,7 +271,7 @@ select.input { appearance: none; }
   .theme-toggle { min-height: 44px; min-width: 44px; justify-content: center; padding: 8px; }
   .theme-toggle .mode { display: none; }                /* icon-only toggle on mobile */
   .sidebar nav {
-    order: 3; flex: 1 1 100%;
+    order: 3; flex: 1 1 100%; min-width: 0;   /* allow shrink below content so tabs scroll, not overflow */
     display: flex; flex-direction: row; gap: 2px;
     overflow-x: auto; overscroll-behavior-x: contain;
     padding: 4px 0 8px; margin: 0;
@@ -278,5 +281,6 @@ select.input { appearance: none; }
   .sidebar nav::-webkit-scrollbar { display: none; }
   .nav-item { width: auto; white-space: nowrap; min-height: 44px; padding: 9px 14px; font-size: 14px; }
   .main-inner { padding: 22px 18px 48px; }
-  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tbl { min-width: 460px; }   /* keep columns readable; .tbl-wrap scrolls horizontally */
 }
