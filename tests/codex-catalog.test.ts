@@ -141,6 +141,27 @@ describe("Codex catalog routed normalization", () => {
     expect(routed?.input_modalities).toEqual(["text"]);
   });
 
+  test("opencode-go high-risk models use official jawcode metadata in the Codex catalog", () => {
+    const cases = [
+      { id: "glm-5.2", context: 1_000_000, auto: 900_000, input: ["text"] },
+      { id: "qwen3.5-plus", context: 1_000_000, auto: 900_000, input: ["text", "image"] },
+      { id: "kimi-k2.7-code", context: 262_144, auto: 235_929, input: ["text", "image"] },
+      { id: "minimax-m3", context: 512_000, auto: 460_800, input: ["text", "image"] },
+      { id: "hy3-preview", context: 256_000, auto: 230_400, input: ["text"] },
+    ] as const;
+    const entries = buildCatalogEntries(nativeTemplate(), [], cases.map(({ id }) => ({ provider: "opencode-go", id })));
+
+    for (const item of cases) {
+      const routed = entries.find(e => e.slug === `opencode-go/${item.id}`);
+
+      expect(routed?.context_window).toBe(item.context);
+      expect(routed?.max_context_window).toBe(item.context);
+      expect(routed?.auto_compact_token_limit).toBe(item.auto);
+      expect(routed?.input_modalities).toEqual(item.input);
+      expect(getJawcodeModelMetadata("opencode-go", item.id)?.contextWindow).toBe(item.context);
+    }
+  });
+
   test("anthropic sonnet 4.6 uses the 200k opencodex catalog cap", () => {
     const entries = buildCatalogEntries(nativeTemplate(), [], [
       { provider: "anthropic", id: "claude-sonnet-4-6" },
