@@ -88,9 +88,56 @@ describe("rate-limit reset credits", () => {
       expect(quota!.fiveHourPercent).toBe(12);
       expect(quota!.weeklyPercent).toBe(34);
     });
+
+    it("maps Go and Free primary_window usage to 30d quota", () => {
+      for (const plan_type of ["go", "free"]) {
+        const quota = parseUsageQuota({
+          plan_type,
+          rate_limit: {
+            primary_window: { used_percent: 27, reset_at: 1700200000 },
+            secondary_window: { used_percent: 99, reset_at: 1700100000 },
+          },
+          rate_limit_reset_credits: { available_count: 1 },
+        });
+
+        expect(quota).toEqual({
+          monthlyPercent: 27,
+          monthlyResetAt: 1700200000,
+          resetCredits: 1,
+        });
+      }
+    });
   });
 
   describe("CodexAuth reset credit UI", () => {
+    it("normalizes Go and Free quota displays to 30d only", async () => {
+      const { normalizeQuotaForPlan } = await import("../gui/src/codex-quota-utils");
+      const quota = {
+        fiveHourPercent: 99,
+        weeklyPercent: 98,
+        monthlyPercent: 12,
+        fiveHourResetAt: 111,
+        weeklyResetAt: 222,
+        monthlyResetAt: 333,
+        resetCredits: 2,
+        updatedAt: 444,
+      };
+
+      expect(normalizeQuotaForPlan(quota, "go")).toEqual({
+        monthlyPercent: 12,
+        monthlyResetAt: 333,
+        resetCredits: 2,
+        updatedAt: 444,
+      });
+      expect(normalizeQuotaForPlan(quota, " free ")).toEqual({
+        monthlyPercent: 12,
+        monthlyResetAt: 333,
+        resetCredits: 2,
+        updatedAt: 444,
+      });
+      expect(normalizeQuotaForPlan(quota, "pro")).toBe(quota);
+    });
+
     it("does not exclude team or workspace plans from ticket badges", async () => {
       const source = await Bun.file("gui/src/pages/CodexAuth.tsx").text();
       expect(source).not.toContain("isWorkspaceAccount");

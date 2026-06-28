@@ -17,11 +17,7 @@ provider 之外,绝不会把你的流量发送到任何地方。
 ## 安装
 
 ```bash
-# With npm (recommended)
 npm install -g @bitkyc08/opencodex
-
-# With Bun
-bun install -g @bitkyc08/opencodex
 ```
 
 验证该二进制文件已在你的 `PATH` 中:
@@ -40,6 +36,9 @@ cd opencodex
 bun install
 bun run dev      # starts the proxy in dev mode (src/cli.ts start)
 ```
+
+`bun run dev` 只启动代理 API（`/healthz`、`/v1/responses`、`/api/*`）。它不会同时在 `/`
+提供打包后的仪表盘。
 
 Web 仪表盘位于 `gui/`,单独运行:
 

@@ -1,10 +1,22 @@
 name: Service lifecycle
 
 on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "src/service.ts"
+      - "src/cli.ts"
+      - "src/bun-runtime.ts"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/service-lifecycle.yml"
   push:
     paths:
       - "src/service.ts"
       - "src/cli.ts"
+      - "src/bun-runtime.ts"
+      - "package.json"
+      - "bun.lock"
       - ".github/workflows/service-lifecycle.yml"
   workflow_dispatch:
 
@@ -12,10 +24,10 @@ jobs:
   linux-systemd:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
       - run: bun install --frozen-lockfile
 
@@ -83,10 +95,10 @@ jobs:
   macos-launchd:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
       - run: bun install --frozen-lockfile
 
@@ -128,10 +140,10 @@ jobs:
   windows-schtasks:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
       - run: bun install --frozen-lockfile
 

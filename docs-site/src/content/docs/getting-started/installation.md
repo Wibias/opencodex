@@ -17,11 +17,7 @@ sends your traffic anywhere except the provider you configure.
 ## Install
 
 ```bash
-# With npm (recommended)
 npm install -g @bitkyc08/opencodex
-
-# With Bun
-bun install -g @bitkyc08/opencodex
 ```
 
 Verify the binary is on your `PATH`:
@@ -40,6 +36,9 @@ cd opencodex
 bun install
 bun run dev      # starts the proxy in dev mode (src/cli.ts start)
 ```
+
+`bun run dev` starts the proxy API only (`/healthz`, `/v1/responses`, `/api/*`). It does not
+serve the packaged dashboard at `/`.
 
 The web dashboard lives in `gui/` and runs separately:
 

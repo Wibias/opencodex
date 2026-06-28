@@ -17,11 +17,7 @@ opencodex는 단일 CLI인 `ocx`로 제공됩니다. 작은 로컬 HTTP 서버(B
 ## 설치
 
 ```bash
-# With npm (recommended)
 npm install -g @bitkyc08/opencodex
-
-# With Bun
-bun install -g @bitkyc08/opencodex
 ```
 
 바이너리가 `PATH`에 있는지 확인합니다:
@@ -40,6 +36,9 @@ cd opencodex
 bun install
 bun run dev      # starts the proxy in dev mode (src/cli.ts start)
 ```
+
+`bun run dev`는 프록시 API(`/healthz`, `/v1/responses`, `/api/*`)만 시작합니다. 패키징된
+대시보드 `/`를 함께 서빙하지 않습니다.
 
 웹 대시보드는 `gui/`에 있으며 별도로 실행됩니다:
 
