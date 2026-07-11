@@ -8,7 +8,7 @@ import Debug from "./pages/Debug";
 import Usage from "./pages/Usage";
 import CodexAuth from "./pages/CodexAuth";
 import ApiKeys from "./pages/ApiKeys";
-import ClaudeCode from "./pages/ClaudeCode";
+import Claude from "./pages/Claude";
 import { IconGrid, IconServer, IconBoxes, IconBot, IconList, IconTerminal, IconActivity, IconKey, IconGithub, IconSun, IconMoon, IconMonitor, IconGlobe, IconPower, IconSparkle } from "./icons";
 import { useI18n, useT, LOCALES, type Locale, type TKey } from "./i18n";
 import { Select } from "./ui";
@@ -191,7 +191,7 @@ export default function App() {
           {page === "usage" && <Usage apiBase={API_BASE} />}
           {page === "codex-auth" && <CodexAuth apiBase={API_BASE} />}
           {page === "api" && <ApiKeys apiBase={API_BASE} />}
-          {page === "claude" && <ClaudeCode apiBase={API_BASE} />}
+          {page === "claude" && <Claude apiBase={API_BASE} />}
         </div>
       </main>
     </div>
