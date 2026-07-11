@@ -25,6 +25,41 @@ ocx claude
 
 Variables you export yourself always win. Extra arguments pass through: `ocx claude -p "hello"`.
 
+## Claude Desktop profile
+
+Claude Desktop uses a separate profile from Claude Code. Open **Claude → Desktop** in the
+dashboard to place each available route in one of four families: Opus, Fable, Sonnet, or Haiku.
+All routes start in Opus on a new profile. The first Opus route becomes the initial overall
+default, and every non-empty family always has one family default.
+
+Drag a row to another family if you like. Dragging is optional: every row also has a visible move
+control that works with a mouse, touch, or keyboard. Use **Make default** to choose a family's
+default, then select **Save and apply to Desktop**. Empty families are allowed. If a saved default
+is temporarily unavailable, the first available route in that family is used until it returns.
+
+You can also manage the same profile from the command line:
+
+```bash
+ocx claude desktop [apply]
+ocx claude desktop show [--json]
+ocx claude desktop move <route> <opus|fable|sonnet|haiku> [--default]
+ocx claude desktop default <opus|fable|sonnet|haiku> <route|none>
+ocx claude desktop export <path|->
+ocx claude desktop import <path> [--apply]
+```
+
+`ocx claude desktop` and `apply` both write the current profile to Claude Desktop. `show` gives a
+readable summary; add `--json` for scripts. `export -` writes versioned JSON to standard output.
+Import validates the complete file before saving, so an invalid file leaves the current profile
+unchanged. Add `--apply` to write a valid imported profile to Desktop immediately. Use `none` only
+for an empty family; every non-empty family must keep one default.
+
+Non-Anthropic routes receive stable aliases such as `claude-opus-4-8-2026MMDD`. The date-looking
+part is a synthetic route slot, not the model's release date. Real Anthropic Claude routes keep
+their real ids. New routes default to the Opus family, but moving a route does not change the
+provider or model it calls. The legacy apply flags `--static`, `--hybrid`, and `--discovery-only`
+remain available for existing scripts.
+
 ## System Environment Integration
 
 On macOS, `ocx start` automatically sets `ANTHROPIC_BASE_URL` and the related Claude Code
@@ -54,13 +89,14 @@ beginning with `claude` or `anthropic`, opencodex exposes routed models as stabl
 aliases:
 
 ```
-claude-opus-4-8-<code>             3-char code derived from the route (e.g. claude-opus-4-8-ncb)
+claude-opus-4-8-2026MMDD           stable date-shaped slot assigned to the route
 ```
 
 Each entry carries an honest display name such as `gemini-3-pro (gemini)`, plus full model
 capabilities (reasoning-effort ladder, thinking types) in the official ModelInfo shape so Claude
 Desktop's third-party gateway mode can offer its effort selector. Real Anthropic models keep their
-canonical ids. Legacy `claude-ocx-<provider>--<model>` ids from older configs still resolve.
+canonical ids. The synthetic 2026 date is an internal slot, not a release date. Legacy hash aliases
+and `claude-ocx-<provider>--<model>` ids from older configs still resolve.
 Models with an authoritative 1M context window get an extra `…[1m]` picker row: selecting it makes
 Claude Code account a full 1M context for that model (auto-compaction stays on) — the proxy strips
 the marker before routing.

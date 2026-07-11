@@ -25,6 +25,42 @@ ocx claude
 
 직접 export한 변수가 항상 우선합니다. 추가 인자는 그대로 전달됩니다: `ocx claude -p "hello"`.
 
+## Claude Desktop 프로필
+
+Claude Desktop은 Claude Code와 별도 프로필을 사용합니다. 대시보드에서 **Claude → Desktop**을
+열면 사용 가능한 라우트를 Opus, Fable, Sonnet, Haiku 네 family 중 하나에 넣을 수 있습니다.
+새 프로필에서는 모든 라우트가 Opus에서 시작합니다. 첫 Opus 라우트가 앱 전체의 초기 기본값이
+되고, 비어 있지 않은 family에는 항상 기본 라우트가 하나 있습니다.
+
+원하면 행을 다른 family로 드래그하세요. 드래그는 필수가 아닙니다. 모든 행에는 마우스, 터치,
+키보드로 쓸 수 있는 이동 메뉴가 보입니다. **기본으로**로 family 기본값을 고른 뒤
+**저장하고 Desktop에 적용**을 누르세요. 빈 family도 허용됩니다. 저장된 기본 라우트를 잠시
+사용할 수 없으면, 그 family에서 사용 가능한 첫 라우트를 대신 쓰고 원래 라우트가 돌아오면
+다시 기본값으로 사용합니다.
+
+명령줄에서도 같은 프로필을 관리할 수 있습니다:
+
+```bash
+ocx claude desktop [apply]
+ocx claude desktop show [--json]
+ocx claude desktop move <route> <opus|fable|sonnet|haiku> [--default]
+ocx claude desktop default <opus|fable|sonnet|haiku> <route|none>
+ocx claude desktop export <path|->
+ocx claude desktop import <path> [--apply]
+```
+
+`ocx claude desktop`과 `apply`는 모두 현재 프로필을 Claude Desktop에 씁니다. `show`는 사람이
+읽기 쉬운 요약을 보여주고, 스크립트에서는 `--json`을 붙이면 됩니다. `export -`는 버전이 포함된
+JSON을 표준 출력으로 보냅니다. 가져오기는 저장 전에 파일 전체를 검증하므로, 잘못된 파일은 현재
+프로필을 바꾸지 않습니다. 올바른 프로필을 바로 Desktop에 쓰려면 `--apply`를 붙이세요. `none`은
+빈 family에만 사용할 수 있으며, 비어 있지 않은 family에는 기본값이 하나 있어야 합니다.
+
+Anthropic이 아닌 라우트에는 `claude-opus-4-8-2026MMDD` 같은 안정적인 별칭이 붙습니다. 날짜처럼
+보이는 부분은 내부 라우트 슬롯이며 모델 출시일이 아닙니다. 실제 Anthropic Claude 라우트는 원래
+id를 유지합니다. 새 라우트의 기본 family는 Opus지만, family를 옮겨도 호출하는 프로바이더나
+모델은 바뀌지 않습니다. 기존 스크립트를 위해 레거시 적용 플래그 `--static`, `--hybrid`,
+`--discovery-only`도 계속 사용할 수 있습니다.
+
 ## 시스템 환경 통합
 
 macOS에서 `ocx start`를 실행하면 `launchctl setenv`를 통해 `ANTHROPIC_BASE_URL`과 관련 Claude Code
@@ -53,16 +89,17 @@ Claude Code 2.1.129+는 게이트웨이 모델을 디스커버리합니다: `GET
 시작하는 id만 받아들이므로, opencodex는 라우팅 모델을 안정적이고 가역적인 별칭으로 노출합니다:
 
 ```
-claude-opus-4-8-<code>             라우트에서 유도한 3자 코드 (예: claude-opus-4-8-ncb)
+claude-opus-4-8-2026MMDD           라우트에 배정된 안정적인 날짜 형식 슬롯
 ```
 
 각 항목은 `gemini-3-pro (gemini)` 같은 정직한 표시 이름과 함께, 공식 ModelInfo 형태의 모델
 능력 정보(추론 강도 사다리, thinking 타입)를 실어 보냅니다 — Claude Desktop의 서드파티
 게이트웨이 모드가 추론 강도 선택 UI를 열 수 있게 하기 위해서입니다. 실제 Anthropic 모델은
-원래 id를 그대로 유지합니다. 구버전 설정의 `claude-ocx-<provider>--<model>` 별칭도 계속
-해석됩니다. 컨텍스트가 1M인 모델에는 `…[1m]` 행이 하나 더 생깁니다 — 이걸 고르면 Claude
-Code가 그 모델의 컨텍스트를 1M로 계산합니다(자동 요약 유지, 프록시가 표식을 떼고 라우팅).
-선택하면 Claude Code의 `settings.json` `model` 필드에 저장되고, 인바운드 요청에서
+원래 id를 그대로 유지합니다. 합성된 2026 날짜는 내부 슬롯이며 출시일이 아닙니다. 구버전의
+해시 별칭과 `claude-ocx-<provider>--<model>` 별칭도 계속 해석됩니다. 컨텍스트가 1M인 모델에는
+`…[1m]` 행이 하나 더 생깁니다 — 이걸 고르면 Claude Code가 그 모델의 컨텍스트를 1M로 계산합니다
+(자동 요약 유지, 프록시가 표식을 떼고 라우팅). 선택하면 Claude Code의
+`settings.json` `model` 필드에 저장되고, 인바운드 요청에서
 별칭이 라우팅 모델로 되돌려집니다. 구버전 Claude Code에서는 `ANTHROPIC_MODEL`로 슬롯을
 지정하거나 `/model`에 라우팅 id를 직접 입력하세요 (Claude Code는 문자열을 그대로 통과시킵니다).
 

@@ -24,6 +24,38 @@ ocx claude
 
 你自己导出的变量始终优先。额外参数原样传递：`ocx claude -p "hello"`。
 
+## Claude Desktop 配置
+
+Claude Desktop 使用与 Claude Code 分开的配置。在仪表盘中打开 **Claude → Desktop**，可以把
+每条可用路由放入 Opus、Fable、Sonnet、Haiku 四个系列之一。新配置中的所有路由默认位于
+Opus。第一条 Opus 路由会成为应用的初始默认模型，每个非空系列也始终有一个默认路由。
+
+你可以把一行拖到另一个系列。拖动不是必需操作：每一行还有一个始终可见的移动控件，可通过
+鼠标、触控或键盘使用。用 **设为默认** 选择系列默认值，然后点击 **保存并应用到 Desktop**。
+系列可以为空。如果保存的默认路由暂时不可用，系统会使用该系列中第一条可用路由；原路由恢复
+后会重新成为默认值。
+
+也可以从命令行管理同一个配置：
+
+```bash
+ocx claude desktop [apply]
+ocx claude desktop show [--json]
+ocx claude desktop move <route> <opus|fable|sonnet|haiku> [--default]
+ocx claude desktop default <opus|fable|sonnet|haiku> <route|none>
+ocx claude desktop export <path|->
+ocx claude desktop import <path> [--apply]
+```
+
+`ocx claude desktop` 和 `apply` 都会把当前配置写入 Claude Desktop。`show` 输出便于阅读的
+摘要；脚本可添加 `--json`。`export -` 把带版本的 JSON 写到标准输出。导入会在保存前验证整个
+文件，因此无效文件不会改变当前配置。添加 `--apply` 可在成功导入后立即写入 Desktop。`none`
+只能用于空系列；每个非空系列必须保留一个默认值。
+
+非 Anthropic 路由会获得类似 `claude-opus-4-8-2026MMDD` 的稳定别名。看起来像日期的部分是
+内部路由槽位，不是模型发布日期。真正的 Anthropic Claude 路由保留原始 id。新路由默认属于
+Opus，但移动系列不会改变实际调用的提供商或模型。为兼容已有脚本，旧版应用参数 `--static`、
+`--hybrid` 和 `--discovery-only` 仍可使用。
+
 ## 系统环境集成
 
 在 macOS 上运行 `ocx start` 时，opencodex 会通过 `launchctl setenv` 在系统范围内自动设置
@@ -50,15 +82,15 @@ Claude Code 2.1.129+ 可以发现网关模型：它调用 `GET /v1/models?limit=
 opencodex 将路由模型暴露为稳定、可逆的别名：
 
 ```
-claude-opus-4-8-<code>             由路由派生的 3 字符代码（例：claude-opus-4-8-ncb）
+claude-opus-4-8-2026MMDD           为路由分配的稳定日期形槽位
 ```
 
 每个条目带有诚实的显示名（如 `gemini-3-pro (gemini)`），并以官方 ModelInfo 形态附带模型能力
 信息（推理强度梯度、thinking 类型），使 Claude Desktop 的第三方网关模式能够启用推理强度选择
-UI。真实 Anthropic 模型保留其原始 id。旧配置中的 `claude-ocx-<provider>--<model>` 别名仍可
-解析。拥有 1M 上下文的模型会多出一行 `…[1m]`：选中后 Claude Code 会按 1M 计算该模型的上下文
-（自动压缩保留，代理在路由前去掉该标记）。选中后会保存到 Claude Code 的 `settings.json`
-`model` 字段；入站请求会将别名解析回路由
+UI。真实 Anthropic 模型保留其原始 id。合成的 2026 日期是内部槽位，不是发布日期。旧版哈希
+别名和 `claude-ocx-<provider>--<model>` 别名仍可解析。拥有 1M 上下文的模型会多出一行 `…[1m]`：
+选中后 Claude Code 会按 1M 计算该模型的上下文（自动压缩保留，代理在路由前去掉该标记）。
+选中后会保存到 Claude Code 的 `settings.json` `model` 字段；入站请求会将别名解析回路由
 模型。旧版 Claude Code 中选择器保持原生 — 通过 `ANTHROPIC_MODEL` 设置槽位，或直接在 `/model`
 中输入任意路由 id（Claude Code 会原样传递字符串）。
 
