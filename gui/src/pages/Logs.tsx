@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { useI18n, LOCALES } from "../i18n";
+import { useEffect, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useI18n, LOCALES, type TFn } from "../i18n";
 import { formatTokens } from "../format-tokens";
 import { statusCodeInfo } from "../status-codes";
 import { IconX } from "../icons";
@@ -23,6 +24,7 @@ interface LogEntry {
   timestamp: number;
   model: string;
   provider: string;
+  surface?: "claude";
   requestedEffort?: string;
   requestedServiceTier?: string;
   requestedSpeedLabel?: string;
@@ -40,35 +42,43 @@ interface LogEntry {
   totalTokens?: number;
 }
 
-function tokensTitle(log: LogEntry): string | undefined {
+function tokensTitle(log: LogEntry, t: TFn): string | undefined {
   if (!log.usage) return undefined;
+  const split = cacheSplit(log);
   const parts = [
-    `in=${log.usage.inputTokens}`,
-    `out=${log.usage.outputTokens}`,
+    `${t("logs.tokens.input")}=${log.usage.inputTokens}`,
+    `${t("logs.tokens.output")}=${log.usage.outputTokens}`,
   ];
-  if (typeof log.usage.cachedInputTokens === "number") parts.push(`cached=${log.usage.cachedInputTokens}`);
-  if (typeof log.usage.cacheReadInputTokens === "number") parts.push(`cacheRead=${log.usage.cacheReadInputTokens}`);
-  if (typeof log.usage.cacheCreationInputTokens === "number") parts.push(`cacheCreate=${log.usage.cacheCreationInputTokens}`);
-  if (typeof log.usage.reasoningOutputTokens === "number") parts.push(`reasoning=${log.usage.reasoningOutputTokens}`);
-  return parts.join(" · ");
+  if (split.read !== undefined) parts.push(`${t("logs.tokens.cacheRead")}=${split.read}`);
+  if (split.write !== undefined) parts.push(`${t("logs.tokens.cacheWrite")}=${split.write}`);
+  if (typeof log.usage.reasoningOutputTokens === "number") parts.push(`${t("logs.tokens.reasoning")}=${log.usage.reasoningOutputTokens}`);
+  if (log.usageStatus === "estimated") parts.push(t("logs.tokens.estimatedNote"));
+  if (log.usageStatus === "estimated" && split.read === undefined && split.write === undefined) {
+    parts.push(t("logs.tokens.noCacheNote"));
+  }
+  return parts.join(" \xC2\xB7 ");
 }
 
 function displayTokenTotal(log: LogEntry): number | undefined {
   if (!log.usage) return typeof log.totalTokens === "number" ? log.totalTokens : undefined;
+  // inputTokens is inclusive of cache read/write (canonical convention, devlog 070);
+  // never re-add cache detail. max() keeps legacy pre-070 rows honest.
   const baseTotal = log.usage.inputTokens + log.usage.outputTokens;
   const explicitTotal = log.usage.totalTokens ?? log.totalTokens;
-  const hasRead = typeof log.usage.cacheReadInputTokens === "number";
-  const hasCreate = typeof log.usage.cacheCreationInputTokens === "number";
-  if (hasRead || hasCreate) {
-    const detailedTotal = baseTotal + (log.usage.cacheReadInputTokens ?? 0) + (log.usage.cacheCreationInputTokens ?? 0);
-    return typeof explicitTotal === "number" ? Math.max(explicitTotal, detailedTotal) : detailedTotal;
-  }
-  if (typeof explicitTotal === "number") return explicitTotal;
-  return baseTotal;
+  return typeof explicitTotal === "number" ? Math.max(explicitTotal, baseTotal) : baseTotal;
 }
 
-function cachedTokenTotal(log: LogEntry): number | undefined {
-  return typeof log.usage?.cachedInputTokens === "number" ? log.usage.cachedInputTokens : undefined;
+/** Cache read/write split; recovers reads from legacy rows that stored read+write combined. */
+function cacheSplit(log: LogEntry): { read?: number; write?: number } {
+  const u = log.usage;
+  if (!u) return {};
+  const write = typeof u.cacheCreationInputTokens === "number" ? u.cacheCreationInputTokens : undefined;
+  const read = typeof u.cacheReadInputTokens === "number"
+    ? u.cacheReadInputTokens
+    : typeof u.cachedInputTokens === "number" && write !== undefined
+      ? Math.max(0, u.cachedInputTokens - write)
+      : u.cachedInputTokens;
+  return { read, write };
 }
 
 function speedLabel(log: LogEntry): string | undefined {
@@ -86,7 +96,7 @@ function modelTitle(log: LogEntry): string {
     log.responseServiceTier ? `responseTier=${log.responseServiceTier}` : undefined,
     log.modelSupportsServiceTier !== undefined ? `supportsTier=${log.modelSupportsServiceTier}` : undefined,
   ].filter(Boolean);
-  return details.join(" · ");
+  return details.join(" \xC2\xB7 ");
 }
 
 export default function Logs({ apiBase }: { apiBase: string }) {
@@ -94,6 +104,8 @@ export default function Logs({ apiBase }: { apiBase: string }) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [detail, setDetail] = useState<LogEntry | null>(null);
+  const [surfaceFilter, setSurfaceFilter] = useState<"all" | "claude" | "codex">("all");
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const localeTag = LOCALES.find(l => l.code === locale)?.htmlLang;
 
   useEffect(() => {
@@ -112,6 +124,22 @@ export default function Logs({ apiBase }: { apiBase: string }) {
   const statusColor = (s: number) => s >= 200 && s < 300 ? "var(--green)" : s >= 400 ? "var(--red)" : "var(--amber)";
 
   const detailInfo = detail ? statusCodeInfo(detail.status, locale) : null;
+  const filteredLogs = logs.filter(log => (
+    surfaceFilter === "all"
+    || (surfaceFilter === "claude" ? log.surface === "claude" : log.surface !== "claude")
+  ));
+
+  const rowVirtualizer = useVirtualizer({
+    count: filteredLogs.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 44,
+    overscan: 15,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+    : 0;
 
   return (
     <>
@@ -124,12 +152,31 @@ export default function Logs({ apiBase }: { apiBase: string }) {
       </div>
       <p className="page-sub">{t("logs.subtitle")}</p>
 
-      {logs.length === 0 ? (
+      <div className="row" style={{ gap: 8, marginBottom: 12, alignItems: "center" }}>
+        <span className="muted" style={{ fontSize: 13 }}>{t("logs.filter.surface.label")}</span>
+        <div className="segmented" role="radiogroup" aria-label={t("logs.filter.surface.label")} style={{ display: "inline-flex", borderRadius: 999, background: "var(--surface-soft, var(--raised))", padding: 3, gap: 2 }}>
+          {(["all", "claude", "codex"] as const).map(surface => (
+            <button
+              key={surface}
+              type="button"
+              role="radio"
+              aria-checked={surfaceFilter === surface}
+              className={`btn btn-sm${surfaceFilter === surface ? " btn-primary" : " btn-ghost"}`}
+              style={{ borderRadius: 999, minWidth: 64, fontSize: 12, padding: "5px 12px", border: "none", background: surfaceFilter === surface ? undefined : "transparent", color: surfaceFilter === surface ? undefined : "var(--muted)" }}
+              onClick={() => setSurfaceFilter(surface)}
+            >
+              {t(`logs.filter.surface.${surface}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filteredLogs.length === 0 ? (
         <EmptyState title={t("logs.noRequests")} />
       ) : (
-        <div className="tbl-wrap">
+        <div ref={scrollContainerRef} className="tbl-wrap" style={{ overflowY: "auto", maxHeight: "calc(100vh - 260px)" }}>
           <table className="tbl">
-            <thead>
+            <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--surface)" }}>
              <tr>
                <th>{t("logs.col.time")}</th>
                 <th className="num log-col-tokens">{t("logs.col.tokens")}</th>
@@ -142,20 +189,41 @@ export default function Logs({ apiBase }: { apiBase: string }) {
              </tr>
             </thead>
             <tbody>
-              {[...logs].reverse().map((log, i) => (
-               <tr key={log.requestId ?? `${log.timestamp}-${i}`}>
+              {paddingTop > 0 && (
+                <tr>
+                  <td colSpan={8} style={{ height: paddingTop, padding: 0, border: 0 }} />
+                </tr>
+              )}
+              {virtualRows.map(virtualRow => {
+                const log = filteredLogs[filteredLogs.length - 1 - virtualRow.index];
+                return (
+               <tr
+                 key={log.requestId ?? `${log.timestamp}-${virtualRow.index}`}
+                 data-index={virtualRow.index}
+                 ref={rowVirtualizer.measureElement}
+               >
                  <td className="muted mono">{new Date(log.timestamp).toLocaleTimeString(localeTag)}</td>
-                  <td className="num mono log-col-tokens" title={tokensTitle(log)}>
+                  <td className="num mono log-col-tokens" title={tokensTitle(log, t)}>
                     {(() => {
                       const tokenTotal = displayTokenTotal(log);
-                      const cachedTotal = cachedTokenTotal(log);
+                      const { read, write } = cacheSplit(log);
                       return tokenTotal !== undefined
                         ? (
                             <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                              <span>{formatTokens(tokenTotal, locale)}</span>
-                              {cachedTotal !== undefined && (
+                              <span>{log.usageStatus === "estimated" ? "~" : ""}{formatTokens(tokenTotal, locale)}</span>
+                              {(read !== undefined && read > 0) && (
                                 <span className="muted" style={{ fontSize: 11, lineHeight: 1 }}>
-                                  c {formatTokens(cachedTotal, locale)}
+                                  c {formatTokens(read, locale)}
+                                </span>
+                              )}
+                              {(write !== undefined && write > 0) && (
+                                <span className="muted" style={{ fontSize: 11, lineHeight: 1 }}>
+                                  w {formatTokens(write, locale)}
+                                </span>
+                              )}
+                              {(log.usageStatus === "estimated" && read === undefined && write === undefined) && (
+                                <span className="muted" style={{ fontSize: 11, lineHeight: 1 }}>
+                                  {t("logs.tokens.noCache")}
                                 </span>
                               )}
                             </span>
@@ -166,6 +234,7 @@ export default function Logs({ apiBase }: { apiBase: string }) {
                  <td className="mono log-col-model" title={modelTitle(log)}>
                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span>{modelLabel(log.resolvedModel ?? log.model)}</span>
+                      {log.surface === "claude" && <span className="badge badge-accent">{t("logs.badge.claude")}</span>}
                       {speedLabel(log) && <span className="badge badge-amber">{speedLabel(log)}</span>}
                     </span>
                   </td>
@@ -184,7 +253,13 @@ export default function Logs({ apiBase }: { apiBase: string }) {
                   <td className="muted mono"><span className="log-reqid" title={log.requestId}>{log.requestId ?? "-"}</span></td>
                  <td className="num">{log.durationMs}ms</td>
                 </tr>
-              ))}
+                );
+              })}
+              {paddingBottom > 0 && (
+                <tr>
+                  <td colSpan={8} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

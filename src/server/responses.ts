@@ -481,6 +481,18 @@ export async function handleResponses(
   }
   logCtx.model = route.modelId;
   logCtx.provider = route.providerName;
+  logCtx.providerAdapter = route.provider.adapter;
+
+  // Fast mode override: when config.fastMode is explicitly set, inject or strip
+  // service_tier for OpenAI-routed models. Undefined = passthrough (client decides).
+  if (config.fastMode !== undefined && route.provider.adapter === "openai-responses") {
+    const tier = config.fastMode ? "priority" : undefined;
+    if (parsed._rawBody && typeof parsed._rawBody === "object") {
+      if (tier) (parsed._rawBody as Record<string, unknown>).service_tier = tier;
+      else delete (parsed._rawBody as Record<string, unknown>).service_tier;
+    }
+    parsed.options.serviceTier = tier;
+  }
 
   // Multi-agent guidance shim: codex-rs emits its Proactive delegation developer
   // message only on the v2 surface. The proxy fills both gaps: the Proactive text
@@ -926,7 +938,7 @@ export async function handleResponses(
       if (!rotated) break;
       // Release the failed response's socket before retrying; unread bodies otherwise linger
       // until runtime cleanup (one per rotated key under a rate-limit storm).
-      try { void upstreamResponse.body?.cancel(); } catch { /* already consumed/closed */ }
+      try { void upstreamResponse.body?.cancel().catch(() => {}); } catch { /* already consumed/closed */ }
       route.provider = rotated;
       const retryAdapter = resolveAdapter(
         resolveWireProtocolOverride(route.providerName, route.modelId, rotated),

@@ -50,6 +50,11 @@ export const VERSION = (() => {
   }
 })();
 
+export interface ManagementApiDeps {
+  toggleCodexMultiAgentV2?: (enabled: boolean) => void;
+  refreshCodexCatalog?: () => Promise<void>;
+}
+
 function parseDebugLogQuery(url: URL): { after: number; limit: number } {
   const after = Number(url.searchParams.get("after") ?? url.searchParams.get("since") ?? "0");
   const limit = Number(url.searchParams.get("limit") ?? "500");
@@ -59,7 +64,7 @@ function parseDebugLogQuery(url: URL): { after: number; limit: number } {
   };
 }
 
-export async function handleManagementAPI(req: Request, url: URL, config: OcxConfig): Promise<Response | null> {
+export async function handleManagementAPI(req: Request, url: URL, config: OcxConfig, deps: ManagementApiDeps = {}): Promise<Response | null> {
   if (!isAllowedRequestOrigin(req, config)) {
     return jsonResponse({ error: "cross-origin request blocked" }, 403, req, config);
   }
@@ -72,6 +77,7 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
     }
   }
   async function refreshCodexCatalogBestEffort(): Promise<void> {
+    if (deps.refreshCodexCatalog) return deps.refreshCodexCatalog();
     try {
       const { refreshCodexModelCatalog } = await import("../codex/refresh");
       await refreshCodexModelCatalog(config);
@@ -207,21 +213,33 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
     return jsonResponse(getUsageDebugLogEntries({ after, limit }));
   }
 
+  if (url.pathname === "/api/claude/inbound-debug" && req.method === "GET") {
+    const { getClaudeInboundDebugEntries } = await import("../claude/inbound-debug");
+    const { isClaudeDebugEnabled } = await import("../lib/debug-settings");
+    return jsonResponse({ enabled: isClaudeDebugEnabled(), entries: getClaudeInboundDebugEntries() });
+  }
+
   if (url.pathname === "/api/debug" && req.method === "PUT") {
-    let body: { debug?: unknown; usage?: unknown; injection?: unknown; reset?: unknown };
+    let body: { debug?: unknown; usage?: unknown; injection?: unknown; claude?: unknown; reset?: unknown };
     try { body = await req.json(); } catch { return jsonResponse({ error: "invalid JSON body" }, 400); }
     if (body.reset === true) return jsonResponse(clearDebugSettings());
     if (body.reset === "debug" || body.reset === "provider") return jsonResponse(clearDebugSetting("debug"));
     if (body.reset === "usage") return jsonResponse(clearDebugSetting("usage"));
     if (body.reset === "injection") return jsonResponse(clearDebugSetting("injection"));
+    if (body.reset === "claude") return jsonResponse(clearDebugSetting("claude"));
     const partial: Partial<Record<DebugFlag, boolean>> = {};
-    for (const key of ["debug", "usage", "injection"] as const) {
+    for (const key of ["debug", "usage", "injection", "claude"] as const) {
       if (body[key] === undefined) continue;
       if (typeof body[key] !== "boolean") return jsonResponse({ error: `${key} must be a boolean` }, 400);
       partial[key] = body[key];
     }
     if (Object.keys(partial).length === 0) {
-      return jsonResponse({ error: "provide debug/usage/injection booleans or reset:true" }, 400);
+      return jsonResponse({ error: "provide debug/usage/injection/claude booleans or reset:true" }, 400);
+    }
+    // Turning capture off should also flush already-captured entries (privacy contract).
+    if (partial.claude === false) {
+      const { clearClaudeInboundDebug } = await import("../claude/inbound-debug");
+      clearClaudeInboundDebug();
     }
     return jsonResponse(setDebugSettings(partial));
   }
@@ -246,6 +264,8 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
           inputTokens: 0,
           outputTokens: 0,
           cachedInputTokens: 0,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
           reasoningOutputTokens: 0,
           totalTokens: 0,
           coverageRatio: 0,
@@ -438,11 +458,12 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
   // itself never writes config — this endpoint is the only server-side mutation
   // surface for the flag.
   if (url.pathname === "/api/v2" && req.method === "GET") {
-    const { isMultiAgentV2Enabled, hasAgentsMaxThreads, getMaxConcurrentThreads } = await import("../codex/features");
+    const { isMultiAgentV2Enabled, hasAgentsMaxThreads, getLogicalMaxThreads } = await import("../codex/features");
+    const enabled = isMultiAgentV2Enabled();
     return jsonResponse({
-      enabled: isMultiAgentV2Enabled(),
-      agentsMaxThreadsConflict: hasAgentsMaxThreads(),
-      maxConcurrentThreadsPerSession: getMaxConcurrentThreads(),
+      enabled,
+      agentsMaxThreadsConflict: enabled && hasAgentsMaxThreads(),
+      maxConcurrentThreadsPerSession: getLogicalMaxThreads(),
       multiAgentMode: config.multiAgentMode ?? "default",
     });
   }
@@ -460,43 +481,45 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
     if (wantsThreads && (typeof body.maxConcurrentThreadsPerSession !== "number" || !Number.isInteger(body.maxConcurrentThreadsPerSession) || body.maxConcurrentThreadsPerSession < 1)) {
       return jsonResponse({ error: "body.maxConcurrentThreadsPerSession must be an integer >= 1" }, 400);
     }
-    const { isMultiAgentV2Enabled, hasAgentsMaxThreads, getMaxConcurrentThreads, setMaxConcurrentThreads } = await import("../codex/features");
-    const warnings: string[] = [];
-    if (wantsFlag && isMultiAgentV2Enabled() !== body.enabled) {
-      const { execFileSync } = await import("node:child_process");
-      const command = process.env.CODEX_CLI_PATH?.trim() || "codex";
-      try {
-        execFileSync(command, ["features", body.enabled ? "enable" : "disable", "multi_agent_v2"],
-          { stdio: ["ignore", "pipe", "pipe"], timeout: 15_000, windowsHide: true });
-      } catch (err) {
-        return jsonResponse({ error: `codex features ${body.enabled ? "enable" : "disable"} failed: ${err instanceof Error ? err.message : String(err)}` }, 502);
-      }
-      await refreshCodexCatalogBestEffort();
+    const mode = wantsMode ? body.multiAgentMode as "v1" | "default" | "v2" : undefined;
+    const modeFlag = mode === "v2" ? true : mode === "v1" ? false : undefined;
+    if (wantsFlag && modeFlag !== undefined && body.enabled !== modeFlag) {
+      return jsonResponse({ error: `body.enabled conflicts with multiAgentMode '${mode}'` }, 400);
     }
-    if (wantsThreads) {
-      // setMaxConcurrentThreads is idempotent (equal value -> no write) and refuses
-      // when the [features.multi_agent_v2] table is missing, so a threads-only PUT
-      // against a never-enabled config fails loudly instead of inventing state.
-      const result = setMaxConcurrentThreads(body.maxConcurrentThreadsPerSession as number);
-      if (!result.ok) return jsonResponse({ error: result.error }, 409);
-      if (result.changed) warnings.push("Thread limit applies to new sessions.");
+    const { isMultiAgentV2Enabled, hasAgentsMaxThreads, getLogicalMaxThreads, transitionMultiAgentV2 } = await import("../codex/features");
+    const warnings: string[] = [];
+    const requestedFlag = wantsFlag ? body.enabled as boolean : modeFlag;
+    if (requestedFlag !== undefined || wantsThreads) {
+      const targetFlag = requestedFlag ?? isMultiAgentV2Enabled();
+      let toggle = deps.toggleCodexMultiAgentV2;
+      if (!toggle) {
+        const { execFileSync } = await import("node:child_process");
+        toggle = (enabled: boolean) => {
+          const command = process.env.CODEX_CLI_PATH?.trim() || "codex";
+          execFileSync(command, ["features", enabled ? "enable" : "disable", "multi_agent_v2"],
+            { stdio: ["ignore", "pipe", "pipe"], timeout: 15_000, windowsHide: true });
+        };
+      }
+      const result = transitionMultiAgentV2(targetFlag, toggle, {
+        ...(wantsThreads ? { threadLimit: body.maxConcurrentThreadsPerSession as number } : {}),
+      });
+      if (!result.ok) return jsonResponse({ error: `multi_agent_v2 transition failed: ${result.error}` }, 502);
+      if (result.changed && result.threadLimit !== null) warnings.push(`Thread limit ${result.threadLimit} preserved for ${targetFlag ? "v2" : "v1"}.`);
     }
     if (wantsMode) {
-      const mode = body.multiAgentMode as "v1" | "default" | "v2";
       if (mode === "default") delete config.multiAgentMode;
       else config.multiAgentMode = mode;
       saveConfig(config);
-      await refreshCodexCatalogBestEffort();
       warnings.push(`Multi-agent mode set to '${mode}'. Applies to new sessions.`);
     }
-    if ((wantsFlag ? body.enabled === true : isMultiAgentV2Enabled()) && hasAgentsMaxThreads()) {
-      warnings.push("[agents] max_threads is set — codex refuses to start while multi_agent_v2 is enabled; remove it (features.multi_agent_v2.max_concurrent_threads_per_session replaces it).");
-    }
-    if (wantsFlag) warnings.push("Applies to new sessions; restart the Codex app or wait out its picker cache to see the ladder change.");
+    await refreshCodexCatalogBestEffort();
+    if (requestedFlag !== undefined) warnings.push("Applies to new sessions; restart the Codex app or wait out its picker cache to see the ladder change.");
+    const enabled = isMultiAgentV2Enabled();
     return jsonResponse({
       ok: true,
-      enabled: isMultiAgentV2Enabled(),
-      maxConcurrentThreadsPerSession: getMaxConcurrentThreads(),
+      enabled,
+      agentsMaxThreadsConflict: enabled && hasAgentsMaxThreads(),
+      maxConcurrentThreadsPerSession: getLogicalMaxThreads(),
       multiAgentMode: config.multiAgentMode ?? "default",
       warnings,
     });
@@ -623,6 +646,175 @@ export async function handleManagementAPI(req: Request, url: URL, config: OcxCon
     save(config);
     await refreshCodexCatalogBestEffort();
     return jsonResponse({ ok: true, applied: chosen });
+  }
+
+  // Claude Code inbound settings (GUI "Claude ON" toggle + Claude page).
+  if (url.pathname === "/api/claude-code" && req.method === "GET") {
+    const models = await fetchAllModels(config);
+    const { listCatalogNativeSlugs } = await import("../codex/catalog");
+    const { claudeCodeAlias, claudeCodeNativeAlias } = await import("../claude/alias");
+    const { buildClaudeContextWindows, effectiveModelEnv } = await import("../claude/context-windows");
+    const { visibleNativeSlugs } = await import("../codex/catalog");
+    const disabled = new Set(config.disabledModels ?? []);
+    const available = [
+      ...listCatalogNativeSlugs(),
+      ...models.map(m => `${m.provider}/${m.id}`),
+    ].filter(ns => !disabled.has(ns));
+    const aliases: { id: string; display_name: string }[] = [];
+    for (const slug of listCatalogNativeSlugs()) {
+      // Readable CLI-surface alias with hash fallback (devlog 050 / audit 051 #2) —
+      // the same shared helper the /v1/models ?ids=cli path uses.
+      if (!disabled.has(slug)) aliases.push({ id: claudeCodeNativeAlias(slug), display_name: `${slug} (native)` });
+    }
+    for (const m of models) {
+      if (disabled.has(`${m.provider}/${m.id}`)) continue;
+      aliases.push({ id: claudeCodeAlias(m.provider, m.id), display_name: `${m.id} (${m.provider})` });
+    }
+    const contextWindows = buildClaudeContextWindows([...visibleNativeSlugs(config)], models);
+    return jsonResponse({
+      enabled: config.claudeCode?.enabled !== false,
+      model: config.claudeCode?.model ?? "",
+      smallFastModel: config.claudeCode?.smallFastModel ?? "",
+      tierModels: config.claudeCode?.tierModels ?? {},
+      modelMap: config.claudeCode?.modelMap ?? {},
+      systemEnv: config.claudeCode?.systemEnv === true,
+      maxContextTokens: config.claudeCode?.maxContextTokens ?? null,
+      alwaysEnableEffort: config.claudeCode?.alwaysEnableEffort === true,
+      autoContext: config.claudeCode?.autoContext !== false,
+      autoCompactWindow: config.claudeCode?.autoCompactWindow ?? null,
+      blockedSkills: config.claudeCode?.blockedSkills ?? null,
+      injectAgents: config.claudeCode?.injectAgents !== false,
+      fastMode: config.fastMode,
+      contextWindows,
+      effectiveModelEnv: effectiveModelEnv(config.claudeCode, contextWindows),
+      available,
+      aliases,
+      port: config.port,
+    });
+  }
+  if (url.pathname === "/api/claude-code" && req.method === "PUT") {
+    // NOTE: model / tierModels / maxContextTokens / alwaysEnableEffort are
+    // CONFIG-ONLY back-compat fields — the GUI no longer offers controls for them
+    // (default model is owned by Claude Code's /model picker; roster agents
+    // supersede tiers; auto-context supersedes the max-context pair; effort rides
+    // regardless on 2.1.207). PUT keeps validating them so hand-written configs
+    // and older GUIs stay safe; GUI saves omit them and the spread preserves them.
+    let body: { enabled?: unknown; model?: unknown; smallFastModel?: unknown; modelMap?: unknown; systemEnv?: unknown; fastMode?: unknown; maxContextTokens?: unknown; alwaysEnableEffort?: unknown; tierModels?: unknown; autoContext?: unknown; autoCompactWindow?: unknown; blockedSkills?: unknown; injectAgents?: unknown };
+    try { body = await req.json(); } catch { return jsonResponse({ error: "invalid JSON body" }, 400); }
+    const next = { ...(config.claudeCode ?? {}) };
+    if (body.enabled !== undefined) {
+      if (typeof body.enabled !== "boolean") return jsonResponse({ error: "enabled must be a boolean" }, 400);
+      next.enabled = body.enabled;
+    }
+    if (body.systemEnv !== undefined) {
+      if (typeof body.systemEnv !== "boolean") return jsonResponse({ error: "systemEnv must be a boolean" }, 400);
+      next.systemEnv = body.systemEnv;
+    }
+    if (body.alwaysEnableEffort !== undefined) {
+      if (typeof body.alwaysEnableEffort !== "boolean") return jsonResponse({ error: "alwaysEnableEffort must be a boolean" }, 400);
+      if (body.alwaysEnableEffort) next.alwaysEnableEffort = true;
+      else delete next.alwaysEnableEffort;
+    }
+    if (body.maxContextTokens !== undefined) {
+      // CONFIG-ONLY back-compat (GUI control removed — superseded by auto-context):
+      // null clears; otherwise a positive integer (devlog 136 B6).
+      if (body.maxContextTokens === null) {
+        delete next.maxContextTokens;
+      } else if (typeof body.maxContextTokens !== "number" || !Number.isInteger(body.maxContextTokens) || body.maxContextTokens <= 0) {
+        return jsonResponse({ error: "maxContextTokens must be a positive integer or null" }, 400);
+      } else {
+        next.maxContextTokens = body.maxContextTokens;
+      }
+    }
+    if (body.autoContext !== undefined) {
+      // Default-on boolean (devlog 260712 020): true = drop the key, false = store.
+      if (typeof body.autoContext !== "boolean") return jsonResponse({ error: "autoContext must be a boolean" }, 400);
+      if (body.autoContext) delete next.autoContext;
+      else next.autoContext = false;
+    }
+    if (body.injectAgents !== undefined) {
+      // Default-on boolean (devlog 260712 070): true = drop the key, false = store.
+      if (typeof body.injectAgents !== "boolean") return jsonResponse({ error: "injectAgents must be a boolean" }, 400);
+      if (body.injectAgents) delete next.injectAgents;
+      else next.injectAgents = false;
+    }
+    if (body.autoCompactWindow !== undefined) {
+      // null resets to the 350k default; otherwise the binary-accepted range
+      // 100_000..1_000_000 (2.1.207 pSo/yDs — audit 021 #1).
+      if (body.autoCompactWindow === null) {
+        delete next.autoCompactWindow;
+      } else if (typeof body.autoCompactWindow !== "number" || !Number.isInteger(body.autoCompactWindow) || body.autoCompactWindow < 100_000 || body.autoCompactWindow > 1_000_000) {
+        return jsonResponse({ error: "autoCompactWindow must be an integer between 100000 and 1000000, or null" }, 400);
+      } else {
+        next.autoCompactWindow = body.autoCompactWindow;
+      }
+    }
+    if (body.blockedSkills !== undefined) {
+      // null resets to the default (["claude-api"]); an array (possibly empty = off)
+      // must contain non-empty strings (devlog 060).
+      if (body.blockedSkills === null) {
+        delete next.blockedSkills;
+      } else if (!Array.isArray(body.blockedSkills) || body.blockedSkills.some(s => typeof s !== "string" || s.trim() === "")) {
+        return jsonResponse({ error: "blockedSkills must be an array of non-empty strings, or null" }, 400);
+      } else {
+        next.blockedSkills = (body.blockedSkills as string[]).map(s => s.trim());
+      }
+    }
+    if (body.tierModels !== undefined) {
+      // CONFIG-ONLY back-compat (GUI pickers removed — roster agents supersede tiers).
+      if (!body.tierModels || typeof body.tierModels !== "object" || Array.isArray(body.tierModels)) {
+        return jsonResponse({ error: "tierModels must be an object" }, 400);
+      }
+      const tiers: Record<string, string> = {};
+      for (const tier of ["opus", "sonnet", "haiku", "fable"] as const) {
+        const value = (body.tierModels as Record<string, unknown>)[tier];
+        if (value === undefined || value === null) continue;
+        if (typeof value !== "string") return jsonResponse({ error: `tierModels.${tier} must be a string` }, 400);
+        if (value.trim() !== "") tiers[tier] = value.trim();
+      }
+      if (Object.keys(tiers).length > 0) next.tierModels = tiers;
+      else delete next.tierModels;
+    }
+    if (body.fastMode !== undefined) {
+      if (body.fastMode !== true && body.fastMode !== false && body.fastMode !== null) {
+        return jsonResponse({ error: "fastMode must be true, false, or null" }, 400);
+      }
+      config.fastMode = body.fastMode === null ? undefined : body.fastMode;
+    }
+    for (const field of ["model", "smallFastModel"] as const) {
+      const value = body[field];
+      if (value === undefined) continue;
+      if (typeof value !== "string") return jsonResponse({ error: `${field} must be a string` }, 400);
+      if (value.trim() === "") delete next[field];
+      else next[field] = value.trim();
+    }
+    if (body.modelMap !== undefined) {
+      if (!body.modelMap || typeof body.modelMap !== "object" || Array.isArray(body.modelMap)) {
+        return jsonResponse({ error: "modelMap must be an object of string->string" }, 400);
+      }
+      const map: Record<string, string> = {};
+      for (const [k, v] of Object.entries(body.modelMap as Record<string, unknown>)) {
+        if (typeof v !== "string" || k.trim() === "" || v.trim() === "") {
+          return jsonResponse({ error: "modelMap entries must be non-empty strings" }, 400);
+        }
+        map[k.trim()] = v.trim();
+      }
+      if (Object.keys(map).length > 0) next.modelMap = map;
+      else delete next.modelMap;
+    }
+    config.claudeCode = next;
+    const { saveConfig: save } = await import("../config");
+    save(config);
+    // Immediate prune when injection turns off (audit 071 #3): stale ocx-* agent
+    // definitions must stop loading in future sessions without waiting for the
+    // next launch hook. Best-effort; the disabled gate inside prunes owned files.
+    if (next.injectAgents === false || next.enabled === false) {
+      try {
+        const { injectClaudeAgentDefs } = await import("../claude/agents-inject");
+        injectClaudeAgentDefs(config, {});
+      } catch { /* best-effort */ }
+    }
+    return jsonResponse({ ok: true, enabled: next.enabled !== false });
   }
 
   // Per-provider catalog allowlist (issue #52): when a provider has a non-empty selectedModels list,

@@ -117,6 +117,9 @@ export {
 } from "./auth-cors";
 import { disableResponsesRequestTimeout, handleResponses, handleResponsesCompact } from "./responses";
 export { disableResponsesRequestTimeout, linkAbortSignal } from "./responses";
+import { handleClaudeCountTokens, handleClaudeMessages } from "./claude-messages";
+import { anthropicErrorResponse } from "../claude/outbound";
+import { buildDesktop3pRegistry } from "../claude/desktop-3p";
 import { handleImages } from "./images";
 import { handleSearch } from "./search";
 import { fetchAllModels, handleManagementAPI, VERSION } from "./management-api";
@@ -273,6 +276,38 @@ export function startServer(port?: number) {
         const nativeSlugs = nativeOpenAiSlugs();
         const goEnabled = filterCatalogVisibleModels(goModels, config);
         const goOrdered = orderForSubagents(goEnabled, config.subagentModels);
+        // Claude Code / Claude Desktop gateway model discovery (GET /v1/models with
+        // Anthropic-style headers; 003 G1-G8 + devlog 131). Entries use the official
+        // ModelInfo shape incl. capabilities (effort ladder / thinking) — Desktop 3P can
+        // only learn capabilities through discovery, and Claude Code 2.1.207 strips the
+        // extra fields (backward-safe). Ids are the claude-opus-4-8-{code} Desktop
+        // aliases; legacy claude-ocx-* ids keep decoding via resolveAlias. Detection:
+        // anthropic-version header (Claude Code sends it) or explicit ?flavor=anthropic.
+        // Codex catalog (client_version) and the OpenAI list shape below stay byte-identical.
+        const wantsAnthropicList = req.headers.get("anthropic-version") !== null
+          || url.searchParams.get("flavor") === "anthropic";
+        if (wantsAnthropicList && !url.searchParams.has("client_version")) {
+          if (config.claudeCode?.enabled === false) return jsonResponse({ data: [] }, 200, req, config);
+          const { buildAnthropicModelInfos } = await import("../claude/model-info");
+          const { resolveAutoContext } = await import("../claude/context-windows");
+          // Per-surface id family (devlog 050): explicit ?ids= wins; otherwise the
+          // Claude Code CLI discovery UA (`claude-code/<version>`, binary n_()) gets
+          // readable claude-ocx ids and every other client (Desktop 3P) keeps the
+          // hashed family its config was written with. Unknown UA -> hashed (safe).
+          const idsParam = url.searchParams.get("ids");
+          const idStyle = idsParam === "cli"
+            ? "readable" as const
+            : idsParam === "desktop"
+              ? "desktop3p" as const
+              : (/^claude-code\//i.test(req.headers.get("user-agent") ?? "") ? "readable" as const : "desktop3p" as const);
+          const data = buildAnthropicModelInfos([...visibleNativeSlugs(config)], goOrdered, resolveAutoContext(config.claudeCode), idStyle);
+          // Build Desktop 3P registry so inbound alias resolution works for subsequent requests.
+          buildDesktop3pRegistry(
+            [...visibleNativeSlugs(config)],
+            goOrdered.map(m => ({ provider: m.provider, id: m.id, contextWindow: m.contextWindow })),
+          );
+          return jsonResponse({ data }, 200, req, config);
+        }
         if (url.searchParams.has("client_version")) {
           // Codex client → Codex catalog shape: native gpt + namespaced routed models,
           // cloned from a native template so required fields (base_instructions, etc.) are present.
@@ -394,6 +429,43 @@ export function startServer(port?: number) {
           },
         });
         return withCors(responseWithDeferredRequestLog(response, requestId, start, logCtx), req, config);
+      }
+
+      // Anthropic Messages inbound (Claude Code). count_tokens FIRST (longer path).
+      // Claude Code posts `/v1/messages?beta=true` — pathname match ignores the query (003 G9).
+      if (url.pathname === "/v1/messages/count_tokens" && req.method === "POST") {
+        if (isDraining()) {
+          return new Response("Service shutting down", { status: 503, headers: { ...corsHeaders(req, config), "Retry-After": "5" } });
+        }
+        if (!hasValidApiAuth(req, config)) {
+          return withCors(anthropicErrorResponse(401, "opencodex API key required", "authentication_error"), req, config);
+        }
+        if (!isAllowedRequestOrigin(req, config)) {
+          return withCors(anthropicErrorResponse(403, "cross-origin data-plane request blocked", "permission_error"), req, config);
+        }
+        const response = await handleClaudeCountTokens(req, config);
+        return withCors(response, req, config);
+      }
+
+      if (url.pathname === "/v1/messages" && req.method === "POST") {
+        disableResponsesRequestTimeout(req, requestServer);
+        if (isDraining()) {
+          return new Response("Service shutting down", { status: 503, headers: { ...corsHeaders(req, config), "Retry-After": "5" } });
+        }
+        if (!hasValidApiAuth(req, config)) {
+          return withCors(anthropicErrorResponse(401, "opencodex API key required", "authentication_error"), req, config);
+        }
+        if (!isAllowedRequestOrigin(req, config)) {
+          return withCors(anthropicErrorResponse(403, "cross-origin data-plane request blocked", "permission_error"), req, config);
+        }
+        const start = Date.now();
+        const requestId = nextRequestLogId(start);
+        const logCtx: RequestLogContext = { model: "unknown", provider: "unknown" };
+        // Logging is finalized inside handleClaudeMessages (Responses-vocab tap on the
+        // pre-translation stream + native passthrough callbacks) — do not re-wrap the
+        // translated Anthropic stream here.
+        const response = await handleClaudeMessages(req, config, logCtx, { requestId, start });
+        return withCors(response, req, config);
       }
 
       // Data-plane guard: unknown /v1/* paths must fail with JSON 404, never fall through to the

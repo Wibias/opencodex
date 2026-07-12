@@ -27,6 +27,9 @@ import { findLiveProxy, probeHostname, type LiveProxy } from "../server/proxy-li
 import { stopProxy } from "../lib/process-control";
 import { serviceCommand, serviceStatusSummary, stopServiceIfInstalled, uninstallServiceIfInstalled } from "../service";
 import { drainAndShutdown, startServer } from "../server";
+import { injectSystemEnv, revertSystemEnv } from "../server/system-env";
+import { buildDesktop3pRegistry } from "../claude/desktop-3p";
+import { installShellHook, uninstallShellHook } from "../server/system-env";
 import { startTokenGuardian } from "../oauth/token-guardian";
 import { startHistoryMigrationGuardian } from "../codex/history-migration-guardian";
 import { maybeShowStarPrompt } from "./star-prompt";
@@ -152,6 +155,7 @@ async function handleStart(options: { block?: boolean } = {}) {
     cleaned = true;
     try { guardian.stop(); } catch { /* best-effort */ }
     try { historyGuardian?.stop(); } catch { /* best-effort */ }
+    try { revertSystemEnv(); } catch { /* best-effort */ }
     removePid(process.pid);
     removeRuntimePort(process.pid);
     if (!process.env.OCX_SERVICE) { try { restoreNativeCodex(); } catch { /* best-effort restore */ } }
@@ -192,8 +196,24 @@ async function handleStart(options: { block?: boolean } = {}) {
   process.on("SIGHUP", shutdown);
   process.on("exit", syncCleanup);
 
+  // System-wide env injection AFTER signal handlers are registered (crash safety:
+  // syncCleanup reverts even if injection itself or subsequent startup steps fail).
+  await injectSystemEnv(port, config).catch(() => {});
+  // Auto-install .zshrc hook (idempotent — skips if already present).
+  installShellHook();
+
   await maybeShowStarPrompt(); // once-only [Y/n] GitHub-star prompt on first interactive start
   await syncModelsToCodex(port).catch(() => {});
+  // Build Desktop 3P alias registry so inbound claude-opus-4-8-{code} aliases (and legacy claude-opus-4-{code}) decode correctly.
+  try {
+    const { fetchAllModels } = await import("../server/management-api");
+    const { visibleNativeSlugs, filterCatalogVisibleModels } = await import("../codex/catalog");
+    const models = filterCatalogVisibleModels(await fetchAllModels(config), config);
+    buildDesktop3pRegistry(
+      [...visibleNativeSlugs(config)],
+      models.map(m => ({ provider: m.provider, id: m.id, contextWindow: m.contextWindow })),
+    );
+  } catch { /* best-effort — registry rebuilds on first /v1/models call */ }
   if (options.block ?? true) {
     setInterval(() => {}, 60_000);
     await new Promise<void>(() => {});
@@ -208,13 +228,15 @@ async function handleEnsure() {
     return;
   }
   const live = await findLiveProxy();
-  if (live) {
-    await syncModelsToCodex(live.port).catch(e => {
-      console.error(`⚠️  Model sync skipped: ${e instanceof Error ? e.message : String(e)}`);
-    });
-    console.log(`✅ Proxy running on port ${live.port}`);
-    return;
-  }
+    if (live) {
+      await syncModelsToCodex(live.port).catch(e => {
+        console.error(`⚠️  Model sync skipped: ${e instanceof Error ? e.message : String(e)}`);
+      });
+      // Ensure env file exists for already-running proxy (may have been deleted or pre-dates this feature).
+      await injectSystemEnv(live.port, config).catch(() => {});
+      console.log(`✅ Proxy running on port ${live.port}`);
+      return;
+    }
 
   const child = spawn(process.execPath, [process.argv[1], "start"], {
     detached: true,
@@ -284,6 +306,9 @@ async function handleStop() {
   }
   const r = restoreNativeCodex();
   console.log(`↩️  ${r.message}`);
+  // Safety net: revert system env vars even if the daemon's syncCleanup didn't run
+  // (e.g. SIGKILL). revertSystemEnv is ownership-checked and idempotent.
+  try { revertSystemEnv(); } catch { /* best-effort */ }
   if (stopFailed) process.exit(1);
 }
 
@@ -317,6 +342,16 @@ async function handleUninstall() {
   await runStep("native Codex restored", () => {
     const r = restoreNativeCodex();
     if (!r.success) throw new Error(r.message);
+  });
+
+  await runStep("system env vars reverted", () => {
+    const r = revertSystemEnv();
+    if (!r.reverted && r.reason !== "no tracking file" && r.reason !== "not macOS") throw new Error(r.reason ?? "revert failed");
+  });
+
+  await runStep("shell hook removed", () => {
+    const r = uninstallShellHook();
+    if (!r.removed && r.reason !== "not installed" && r.reason !== "not macOS") throw new Error(r.reason ?? "remove failed");
   });
 
   try {
@@ -580,6 +615,50 @@ switch (command) {
     const { handleModels } = await import("./models");
     handleModels(args.slice(1));
     break;
+  }
+  case "claude": {
+    const { cmdClaude } = await import("./claude");
+    // "ocx claude desktop" → write Desktop 3P config
+    if (args[1] === "desktop") {
+      const config = loadConfig();
+      const { fetchAllModels } = await import("../server/management-api");
+      const { visibleNativeSlugs, filterCatalogVisibleModels } = await import("../codex/catalog");
+      const { parseDesktop3pModeArgs, writeDesktop3pConfig } = await import("../claude/desktop-3p");
+      // Mutually-exclusive mode flags (devlog 138): default static (deterministic; the
+      // static list overrides discovery anyway — no merge).
+      const parsedMode = parseDesktop3pModeArgs(args.slice(2));
+      if ("error" in parsedMode) {
+        console.error(`❌ ${parsedMode.error}`);
+        process.exit(1);
+      }
+      const mode = parsedMode.mode;
+      const live = await findLiveProxy();
+      const port = live?.port ?? config.port ?? 10100;
+      const allModels = await fetchAllModels(config);
+      const models = filterCatalogVisibleModels(allModels, config);
+      const nativeSlugs = [...visibleNativeSlugs(config)];
+      // contextWindow rides along so supports1m derives from authoritative data (감사 R1#1).
+      const routedModels = models.map(m => ({ provider: m.provider, id: m.id, contextWindow: m.contextWindow }));
+      const result = writeDesktop3pConfig(port, nativeSlugs, routedModels, undefined, mode);
+      if (result.written) {
+        const oneM = routedModels.filter(m => typeof m.contextWindow === "number" && m.contextWindow >= 1_000_000).length;
+        console.log(`✅ Claude Desktop 3P 설정 완료: ${result.path}`);
+        console.log(`   Gateway: http://127.0.0.1:${port}`);
+        if (mode === "discovery") {
+          console.log(`   모델 목록: 자동 발견만 (프록시 /v1/models에서 ${nativeSlugs.length + models.length}개)`);
+        } else {
+          const suffix = mode === "hybrid" ? " + 자동 발견 병행" : "";
+          console.log(`   모델 ${nativeSlugs.length + models.length}개 고정 등록${suffix} (1M 컨텍스트 별도 행 ${oneM}개)`);
+          if (oneM > 0) console.log(`   1M을 쓰려면 Desktop 모델 피커에서 [1M] 붙은 행을 직접 선택하세요.`);
+        }
+        console.log(`   Claude Desktop을 재시작하면 적용됩니다.`);
+      } else {
+        console.error(`❌ 설정 실패: ${result.reason}`);
+        process.exit(1);
+      }
+      break;
+    }
+    process.exit(await cmdClaude(args.slice(1)));
   }
     case "help":
   case "--help":

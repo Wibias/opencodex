@@ -134,7 +134,8 @@ describe("usage log", () => {
     expect(usageStatusForFinalLog({ inputTokens: 0, outputTokens: 0, estimated: true })).toBe("estimated");
     expect(usageTotalTokens(undefined)).toBeUndefined();
     expect(usageTotalTokens({ inputTokens: 4, outputTokens: 6, cachedInputTokens: 2 })).toBe(10);
-    expect(usageTotalTokens({ inputTokens: 4, outputTokens: 6, cachedInputTokens: 2, cacheReadInputTokens: 1, cacheCreationInputTokens: 1 })).toBe(12);
+    // inputTokens is inclusive of cache detail — the total never re-adds it
+    expect(usageTotalTokens({ inputTokens: 4, outputTokens: 6, cachedInputTokens: 2, cacheReadInputTokens: 1, cacheCreationInputTokens: 1 })).toBe(10);
     expect(usageTotalTokens({ inputTokens: 4, outputTokens: 6, totalTokens: 50_000 })).toBe(50_000);
   });
 
@@ -142,6 +143,10 @@ describe("usage log", () => {
     const usage = { inputTokens: 4, outputTokens: 6 };
     expect(usageForFinalLog("kiro", usage)).toEqual({ ...usage, estimated: true });
     expect(usageForFinalLog("kiro-p9d8524", usage)).toEqual({ ...usage, estimated: true });
+    // cursor: adapter name AND configured-provider-name prefixes both count (devlog 130 B2 —
+    // "cursor-pb51d9b" rows previously logged as accurately "reported").
+    expect(usageForFinalLog("cursor", usage)).toEqual({ ...usage, estimated: true });
+    expect(usageForFinalLog("cursor-pb51d9b", usage)).toEqual({ ...usage, estimated: true });
     expect(usageForFinalLog("openai", usage)).toEqual(usage);
     expect(usageForFinalLog("openai", { ...usage, estimated: true })).toEqual({ ...usage, estimated: true });
   });

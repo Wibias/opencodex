@@ -224,6 +224,15 @@ export interface OcxUrlCitation {
   title?: string;
 }
 
+/**
+ * Canonical usage convention (devlog/260711_claude_inbound/070):
+ * - `inputTokens` is the TOTAL prompt size, INCLUDING cache reads and cache writes
+ *   (OpenAI Responses convention). Anthropic parse sites normalize into this shape.
+ * - `cachedInputTokens` is cache READ tokens only (a subset of `inputTokens`).
+ * - `cacheReadInputTokens`/`cacheCreationInputTokens` carry the read/write split when
+ *   the provider reports both; reads mirror `cachedInputTokens`.
+ * - `totalTokens` = inputTokens + outputTokens. Never re-add cache detail on top.
+ */
 export interface OcxUsage {
   inputTokens: number;
   outputTokens: number;
@@ -235,10 +244,90 @@ export interface OcxUsage {
   estimated?: boolean;
 }
 
+/**
+ * Claude Code inbound settings (devlog/260711_claude_inbound). Consumed by the
+ * /v1/messages surface, the `ocx claude` launcher, and the GUI Claude page.
+ */
+export interface OcxClaudeCodeConfig {
+  /** Kill switch for the /v1/messages inbound (GUI "Claude ON" toggle). Default: enabled. */
+  enabled?: boolean;
+  /**
+   * Verbatim passthrough of unmapped claude/anthropic models to api.anthropic.com with the
+   * caller's own sk-ant-* credential (Claude Code subscription OAuth). Default: enabled.
+   */
+  nativePassthrough?: boolean;
+  /** Upstream for the native passthrough (tests/enterprise gateways). Default: https://api.anthropic.com */
+  anthropicBaseUrl?: string;
+  /** Default model slot injected as ANTHROPIC_MODEL by `ocx claude`. */
+  model?: string;
+  /** Haiku/small-fast slot injected as ANTHROPIC_DEFAULT_HAIKU_MODEL (+ legacy SMALL_FAST). */
+  smallFastModel?: string;
+  /** Inbound model id remaps: exact id first, then date-stripped (`-\d{8}$`). */
+  modelMap?: Record<string, string>;
+  /**
+   * Inject ANTHROPIC_BASE_URL etc. into the macOS user domain via `launchctl setenv`
+   * so plain `claude` commands route through the proxy without `ocx claude`. Reverted
+   * on stop/shutdown. Default: true when `enabled` is not false. macOS only.
+   */
+  systemEnv?: boolean;
+  /**
+   * Context-window override for Claude Code/Desktop clients (devlog 136 B6):
+   * injected as CLAUDE_CODE_MAX_CONTEXT_TOKENS + DISABLE_COMPACT=1 (the official
+   * env pair — recognized claude-shaped ids need both). WARNING: DISABLE_COMPACT
+   * turns off auto-compaction. Unset = client defaults.
+   */
+  maxContextTokens?: number;
+  /**
+   * Opt-in CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1 injection. Default OFF: opus-shaped
+   * aliases already carry output_config.effort on the wire (devlog 136 실측), and
+   * forcing effort on every request can leak reasoning params to non-reasoning routes.
+   */
+  alwaysEnableEffort?: boolean;
+  /**
+   * Subagent tier slots (devlog 260712 B2): injected as ANTHROPIC_DEFAULT_*_MODEL so
+   * Claude Code's Agent-tool aliases (opus/sonnet/haiku/fable + parent-inherit) route
+   * to proxy models. haiku falls back to smallFastModel (one effective value feeds
+   * both ANTHROPIC_DEFAULT_HAIKU_MODEL and legacy ANTHROPIC_SMALL_FAST_MODEL).
+   */
+  tierModels?: { opus?: string; sonnet?: string; haiku?: string; fable?: string };
+  /**
+   * Auto-context (devlog 260712 020): when not false, routed/native models whose
+   * authoritative window is > 200k AND >= the compact window get the [1m] marker
+   * (Claude Code then accounts 1M) and CLAUDE_CODE_AUTO_COMPACT_WINDOW is injected
+   * so compaction fires at the real budget. 2.1.207 semantics (binary-verified):
+   * effective compact window = min(believed window, env) — one global env behaves
+   * like a per-model floor. Default: enabled. Inert while maxContextTokens is set
+   * (the legacy DISABLE_COMPACT pair takes rule-1 precedence in the CLI).
+   */
+  autoContext?: boolean;
+  /** Compact-window tokens for auto-context. Default 350_000. */
+  autoCompactWindow?: number;
+  /**
+   * Bundled-skill content elision for ROUTED (non-Anthropic) models (devlog 260712
+   * 060): Skill-tool results whose skill name matches an entry here are replaced
+   * with a short stub in the anthropic->responses translation. Third-party models
+   * are not trained on these Anthropic doc bundles, and claude-api alone injects
+   * ~136k tokens (GitHub anthropics/claude-code#74473). Native Anthropic
+   * passthrough never goes through the translation, so Claude models keep the
+   * full content. Default: ["claude-api"]. Empty array = explicitly off.
+   */
+  blockedSkills?: string[];
+  /**
+   * Sync the featured subagent roster (config.subagentModels + main model) into
+   * ~/.claude/agents/ocx-*.md custom agent definitions at launch (devlog 260712
+   * 070) so any routed model is dispatchable as a subagent_type — the Agent
+   * tool's model argument is a hard 4-alias enum, but definition frontmatter is
+   * free. Only ocx-*.md files are owned/pruned. Default: enabled.
+   */
+  injectAgents?: boolean;
+}
+
 export interface OcxConfig {
   port: number;
   providers: Record<string, OcxProviderConfig>;
   defaultProvider: string;
+  /** Claude Code inbound + launcher settings. */
+  claudeCode?: OcxClaudeCodeConfig;
   /**
    * Up to 5 routed model ids ("<provider>/<model>") to feature FIRST in the injected Codex catalog.
    * Codex's spawn_agent only advertises the first 5 routed models, so this picks which 5 appear.
@@ -251,6 +340,12 @@ export interface OcxConfig {
    * the Codex ladder (src/reasoning-effort.ts CODEX_REASONING_LEVELS) at the API boundary.
    */
   injectionEffort?: string;
+  /**
+   * When true, OpenAI-routed requests include `service_tier: "priority"` (fast inference).
+   * When false, service_tier is stripped so requests use default speed.
+   * Undefined = passthrough (don't modify what the client sends).
+   */
+  fastMode?: boolean;
   /**
    * Custom override for the injected multi-agent guidance body (the text inside the
    * <multi_agent_mode> tags). When set, it replaces the built-in prompt on whichever
@@ -551,6 +646,19 @@ export interface OcxProviderConfig {
    * controlled by their own opt-in config.
    */
   unsafeAllowNativeLocalExec?: boolean;
+  /**
+   * Cursor adapter only: native local exec policy mode (exec-policy.ts).
+   * "off" (default) rejects all server-driven local exec; "on" always allows
+   * (same as legacy unsafeAllowNativeLocalExec:true); "codex-sandbox" allows only
+   * when the request's instructions/developer text declares the Codex
+   * danger-full-access sandbox. NOTE: the declaration is CALLER-CONTROLLED prose —
+   * the proxy cannot verify it. Enable "codex-sandbox" only where every client
+   * that can reach the data plane is trusted: the default loopback bind admits
+   * ANY process on this host without auth (including other local users on
+   * multi-user machines), and isAllowedRequestOrigin blocks non-loopback
+   * browser origins by default but not loopback-origin or origin-less callers.
+   */
+  nativeLocalExec?: "off" | "codex-sandbox" | "on";
 }
 
 export interface CodexAccount {
