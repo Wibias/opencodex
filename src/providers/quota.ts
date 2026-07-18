@@ -205,10 +205,11 @@ async function fetchAnthropicQuota(provider: string): Promise<ProviderQuotaRepor
   const opus = parseClaudeBucket(body.seven_day_opus);
   const sonnet = parseClaudeBucket(body.seven_day_sonnet);
   const customWindows: ProviderQuotaWindow[] = [];
-  if (fiveHour?.percent !== undefined) customWindows.push({ label: "5h", percent: fiveHour.percent, ...(fiveHour.resetAt !== undefined ? { resetAt: fiveHour.resetAt } : {}) });
   if (opus?.percent !== undefined) customWindows.push({ label: "Opus", percent: opus.percent, ...(opus.resetAt !== undefined ? { resetAt: opus.resetAt } : {}) });
   if (sonnet?.percent !== undefined) customWindows.push({ label: "Sonnet", percent: sonnet.percent, ...(sonnet.resetAt !== undefined ? { resetAt: sonnet.resetAt } : {}) });
   const quota: ProviderQuota = {
+    ...(fiveHour?.percent !== undefined ? { fiveHourPercent: fiveHour.percent } : {}),
+    ...(fiveHour?.resetAt !== undefined ? { fiveHourResetAt: fiveHour.resetAt } : {}),
     ...(sevenDay?.percent !== undefined ? { weeklyPercent: sevenDay.percent } : {}),
     ...(sevenDay?.resetAt !== undefined ? { weeklyResetAt: sevenDay.resetAt } : {}),
     ...(customWindows.length > 0 ? { customWindows } : {}),
