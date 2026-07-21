@@ -424,17 +424,28 @@ export function codexForwardTerminalOutcomeRecorder(
   provider: OcxProviderConfig,
   logCtx?: RequestLogContext,
   threadId?: string | null,
-): ((status: ResponsesTerminalStatus) => void) | undefined {
+): ((status: ResponsesTerminalStatus, httpStatusOverride?: number) => void) | undefined {
   if (!usesCodexForwardPoolAuth(authCtx, provider)) return undefined;
-  return status => {
-    // Use the semantic HTTP status derived from the terminal SSE error payload
-    // (httpStatusFromTerminalError in request-log inspection) instead of collapsing
-    // every non-completed terminal to 502. A 400 invalid_request_error must not
-    // soft-avoid the account or rebind threads — only genuine transport/5xx failures
-    // should trigger transient health recording.
+  return (status, httpStatusOverride) => {
+    if (status === "incomplete") {
+      // Normal limit/content-filter/stall terminal — the account served the
+      // request. Don't penalize account health; record success to clear any
+      // prior soft-avoid so a healthy account isn't stuck avoided.
+      recordCodexUpstreamOutcome(config, authCtx.accountId, 200, { threadId });
+      return;
+    }
+    // status === "completed" or "failed": use the semantic HTTP status derived
+    // from the terminal SSE error payload (httpStatusFromTerminalError in
+    // request-log inspection) instead of collapsing every non-completed terminal
+    // to 502. A 400 invalid_request_error must not soft-avoid the account or
+    // rebind threads — only genuine transport/5xx failures should trigger
+    // transient health recording.
+    // httpStatusOverride: the combo WS path inspects SSE payloads into the parent
+    // logCtx, but this recorder closes over the child logCtx. The caller passes
+    // the parent's terminalHttpStatus so the semantic status is not lost.
     const outcome = status === "completed"
       ? 200
-      : (logCtx?.terminalHttpStatus ?? 502);
+      : (httpStatusOverride ?? logCtx?.terminalHttpStatus ?? 502);
     recordCodexUpstreamOutcome(config, authCtx.accountId, outcome, { threadId });
   };
 }
@@ -482,7 +493,7 @@ interface HandleResponsesOptions {
   onFirstOutput?: () => void;
   onCodexAuthContextResolved?: (context: CodexAuthContext | undefined) => void;
   recordTerminalOutcomes?: boolean;
-  setTerminalOutcomeRecorder?: (recorder: ((status: ResponsesTerminalStatus) => void) | undefined) => void;
+  setTerminalOutcomeRecorder?: (recorder: ((status: ResponsesTerminalStatus, httpStatusOverride?: number) => void) | undefined) => void;
   onNativePassthroughTerminal?: (status: ResponsesTerminalStatus) => void;
   onNativePassthroughCancel?: () => void;
   /** Internal recursion guard; callers outside this module must not set it. */
@@ -624,7 +635,7 @@ async function handleComboResponses(
       body: JSON.stringify(childBody),
     });
     let resolvedAuth: CodexAuthContext | undefined;
-    let terminalRecorder: ((status: ResponsesTerminalStatus) => void) | undefined;
+    let terminalRecorder: ((status: ResponsesTerminalStatus, httpStatusOverride?: number) => void) | undefined;
     const started = Date.now();
     const attempt = beginRequestAttempt(
       (logCtx.attempts?.length ?? 0) + 1,
@@ -1174,8 +1185,8 @@ export async function handleResponses(
         );
       }
       if (terminalBodyWillRecord) {
-        options.setTerminalOutcomeRecorder?.(status => {
-          terminalRecorder(status);
+        options.setTerminalOutcomeRecorder?.((status, httpStatusOverride) => {
+          terminalRecorder(status, httpStatusOverride);
           options.onNativePassthroughTerminal?.(status);
         });
       } else {
@@ -1817,7 +1828,12 @@ export async function handleResponsesCompact(
       return buffered;
     }
     if (upstream.ok && buffered.status >= 500) {
-      recordCompactPoolOutcome("connect_error");
+      // The upstream account returned 200 — it is healthy. The buffering failure
+      // (oversized body exceeding COMPACT_RESPONSE_MAX_BYTES, or a rare mid-read
+      // reset on a small JSON payload) is a local proxy issue, not account flakiness.
+      // Record the upstream status so a deterministic payload-size limit does not
+      // soft-avoid a healthy account and rotate a thread for 30s.
+      recordCompactPoolOutcome(upstream.status, { retryAfter });
     } else {
       recordCompactPoolOutcome(upstream.status, { retryAfter });
     }
