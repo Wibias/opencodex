@@ -35,28 +35,29 @@ jobs:
             const issue_number = issue.number;
 
             /*
-             * Only inspect feature requests.
+             * Detect which structured form this issue came from. Labels can be
+             * added manually, so require the form's title prefix AND its section
+             * headings; an issue that merely carries a label is never validated
+             * with the wrong form's rules.
              *
-             * The feature form applies the "enhancement" label and uses the
-             * "[Feature]:" title prefix, but labels can be added manually to
-             * non-feature issues. Require the feature title prefix AND the
-             * feature-form section headings so a bug/support issue that merely
-             * carries the label is never validated as a feature request.
+             * Feature requests get the full quality check. Bug reports get a
+             * deliberately narrow check (empty body or title-only) so a terse
+             * but real crash report is never auto-closed.
              */
-            const hasFeatureTitle =
-              /^\[feature\]\s*:/i.test(issue.title);
-
             const body = String(issue.body ?? "");
 
-            const hasFeatureFormSections =
+            const isFeatureRequest =
+              /^\[feature\]\s*:/i.test(issue.title) &&
               /(?:^|\r?\n)###\s+Problem to solve\s*\r?\n/i.test(body) &&
               /(?:^|\r?\n)###\s+Proposed solution\s*\r?\n/i.test(body);
 
-            const isFeatureRequest =
-              hasFeatureTitle && hasFeatureFormSections;
+            const isBugReport =
+              /^\[bug\]\s*:/i.test(issue.title) &&
+              /(?:^|\r?\n)###\s+Summary\s*\r?\n/i.test(body) &&
+              /(?:^|\r?\n)###\s+Reproduction\s*\r?\n/i.test(body);
 
-            if (!isFeatureRequest) {
-              core.info("Not a feature request. Skipping.");
+            if (!isFeatureRequest && !isBugReport) {
+              core.info("Not a feature request or bug report form. Skipping.");
               return;
             }
 
@@ -132,7 +133,7 @@ jobs:
 
             function getSection(heading) {
               const pattern = new RegExp(
-                `(?:^|\\r?\\n)###\\s+${escapeRegExp(heading)}\\s*\\r?\\n([\\s\\S]*?)(?=\\r?\\n###\\s+(?:Problem to solve|Proposed solution|Alternatives considered|Additional context)\\s*(?:\\r?\\n|$)|$)`,
+                `(?:^|\\r?\\n)###\\s+${escapeRegExp(heading)}\\s*\\r?\\n([\\s\\S]*?)(?=\\r?\\n###\\s+(?:Problem to solve|Proposed solution|Alternatives considered|Additional context|Summary|Reproduction|Logs and screenshots|Area|Version|OS|Config shape|Checks)\\s*(?:\\r?\\n|$)|$)`,
                 "i"
               );
 
@@ -207,80 +208,122 @@ jobs:
               });
             }
 
-            const problem =
-              getSection("Problem to solve");
-
-            const solution =
-              getSection("Proposed solution");
-
-            const title = issue.title.replace(
-              /^\[feature\]\s*:\s*/i,
-              ""
-            );
-
             const reasons = [];
 
-            /*
-             * Reject genuinely empty or nearly empty sections.
-             */
-            if (
-              problem.length < 25 ||
-              wordCount(problem) < 5
-            ) {
-              reasons.push(
-                "The **Problem to solve** section is missing or too short to identify a concrete limitation."
-              );
-            }
+            if (isFeatureRequest) {
+              const problem =
+                getSection("Problem to solve");
 
-            if (
-              solution.length < 25 ||
-              wordCount(solution) < 5
-            ) {
-              reasons.push(
-                "The **Proposed solution** section is missing or too short to describe the expected behaviour."
-              );
-            }
+              const solution =
+                getSection("Proposed solution");
 
-            /*
-             * Two extremely brief required sections usually provide no
-             * actionable context, even when each technically contains text.
-             */
-            if (
-              problem.length < 80 &&
-              solution.length < 80
-            ) {
-              reasons.push(
-                "Both required sections are too brief to provide enough actionable context."
+              const title = issue.title.replace(
+                /^\[feature\]\s*:\s*/i,
+                ""
               );
-            }
 
-            /*
-             * The problem and solution must describe different things.
-             */
-            if (
-              canonicalise(problem) &&
-              canonicalise(problem) ===
-                canonicalise(solution)
-            ) {
-              reasons.push(
-                "The problem and proposed solution repeat the same text instead of describing two distinct things."
-              );
-            }
+              /*
+               * Reject genuinely empty or nearly empty sections.
+               */
+              if (
+                problem.length < 25 ||
+                wordCount(problem) < 5
+              ) {
+                reasons.push(
+                  "The **Problem to solve** section is missing or too short to identify a concrete limitation."
+                );
+              }
 
-            /*
-             * Reject submissions where the entire body merely repeats
-             * the title, as issue #208 does.
-             */
-            if (
-              canonicalise(title) &&
-              canonicalise(title) ===
+              if (
+                solution.length < 25 ||
+                wordCount(solution) < 5
+              ) {
+                reasons.push(
+                  "The **Proposed solution** section is missing or too short to describe the expected behaviour."
+                );
+              }
+
+              /*
+               * Two extremely brief required sections usually provide no
+               * actionable context, even when each technically contains text.
+               */
+              if (
+                problem.length < 80 &&
+                solution.length < 80
+              ) {
+                reasons.push(
+                  "Both required sections are too brief to provide enough actionable context."
+                );
+              }
+
+              /*
+               * The problem and solution must describe different things.
+               */
+              if (
                 canonicalise(problem) &&
-              canonicalise(title) ===
-                canonicalise(solution)
-            ) {
-              reasons.push(
-                "The issue body only repeats the title and adds no actionable detail."
+                canonicalise(problem) ===
+                  canonicalise(solution)
+              ) {
+                reasons.push(
+                  "The problem and proposed solution repeat the same text instead of describing two distinct things."
+                );
+              }
+
+              /*
+               * Reject submissions where the entire body merely repeats
+               * the title, as issue #208 does.
+               */
+              if (
+                canonicalise(title) &&
+                canonicalise(title) ===
+                  canonicalise(problem) &&
+                canonicalise(title) ===
+                  canonicalise(solution)
+              ) {
+                reasons.push(
+                  "The issue body only repeats the title and adds no actionable detail."
+                );
+              }
+            } else {
+              /*
+               * Bug reports get a deliberately narrow check. A terse but real
+               * crash report is valuable, so only close the unambiguous junk:
+               * an effectively empty body, or a body that merely repeats the
+               * title. No word-count floors, no "sections must differ" rule.
+               */
+              const summary =
+                getSection("Summary");
+
+              const reproduction =
+                getSection("Reproduction");
+
+              const title = issue.title.replace(
+                /^\[bug\]\s*:\s*/i,
+                ""
               );
+
+              /*
+               * "Effectively empty" means both required sections carry no real
+               * content (blank or the form's "No response" placeholder, which
+               * clean() strips). The section headings themselves always remain
+               * in the body, so a raw length check would never fire.
+               */
+              if (
+                summary.length === 0 &&
+                reproduction.length === 0
+              ) {
+                reasons.push(
+                  "Both the **Summary** and **Reproduction** sections are empty."
+                );
+              } else if (
+                canonicalise(title) &&
+                canonicalise(title) === canonicalise(summary) &&
+                canonicalise(title) === canonicalise(reproduction)
+              ) {
+                reasons.push(
+                  "The issue body only repeats the title and adds no actionable detail."
+                );
+              }
             }
 
             const invalid = reasons.length > 0;
@@ -307,6 +350,20 @@ jobs:
                 active: true
               };
 
+              const guidance = isFeatureRequest
+                ? [
+                    "- the specific workflow or limitation you are trying to improve",
+                    "- the exact behaviour you expect",
+                    "- an example request, response, CLI command, configuration, or upstream API reference",
+                    "- why the existing behaviour is insufficient"
+                  ]
+                : [
+                    "- a clear summary of what happened and what you expected",
+                    "- the exact steps, commands, and config needed to reproduce",
+                    "- the installed version and operating system",
+                    "- relevant logs, stack traces, or screenshots"
+                  ];
+
               await upsertComment(
                 [
                   COMMENT_MARKER,
@@ -322,10 +379,7 @@ jobs:
                   "",
                   "Please edit the issue to include:",
                   "",
-                  "- the specific workflow or limitation you are trying to improve",
-                  "- the exact behaviour you expect",
-                  "- an example request, response, CLI command, configuration, or upstream API reference",
-                  "- why the existing behaviour is insufficient",
+                  ...guidance,
                   "",
                   `See the [Contributing guide](${CONTRIBUTING_URL}) for additional guidance. Once the issue contains enough detail, it will be reopened automatically.`
                 ].join("\n")

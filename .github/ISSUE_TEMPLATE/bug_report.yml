@@ -59,6 +59,8 @@ body:
       label: Version
       description: The installed `@bitkyc08/opencodex` version or commit SHA.
       placeholder: 2.7.7
+    validations:
+      required: true
 
   - type: input
     id: os
