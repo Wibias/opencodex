@@ -138,7 +138,14 @@ jobs:
             if (result.valid) {
               // If the bot previously closed it, consider reopening.
               if (botState?.active && issue.state === "closed") {
-                const canReopen = shouldReopen(botState, issue, actorIsMaintainer && eventType === "reopened");
+                // Normalise closed_by from the API object to a plain login string.
+                const issueForDecision = {
+                  state: issue.state,
+                  closed_at: issue.closed_at,
+                  state_reason: issue.state_reason,
+                  closed_by: issue.closed_by?.login ?? null,
+                };
+                const canReopen = shouldReopen(botState, issueForDecision, actorIsMaintainer && eventType === "reopened");
 
                 if (canReopen) {
                   await github.rest.issues.update({

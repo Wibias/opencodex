@@ -410,4 +410,24 @@ describe("shouldReopen", () => {
     const issue = { state: "closed", closed_at: "2026-07-20T10:00:00Z", state_reason: "not_planned" };
     assert.equal(shouldReopen(baseBotState, issue, true), false);
   });
+
+  it("forbids reopen when a human closed the issue (closed_by is not the bot)", () => {
+    const issue = {
+      state: "closed",
+      closed_at: "2026-07-20T10:00:00Z",
+      state_reason: "not_planned",
+      closed_by: "lidge-jun",
+    };
+    assert.equal(shouldReopen(baseBotState, issue, false), false);
+  });
+
+  it("allows reopen when the bot is the recorded closer", () => {
+    const issue = {
+      state: "closed",
+      closed_at: "2026-07-20T10:00:00Z",
+      state_reason: "not_planned",
+      closed_by: "github-actions[bot]",
+    };
+    assert.equal(shouldReopen(baseBotState, issue, false), true);
+  });
 });

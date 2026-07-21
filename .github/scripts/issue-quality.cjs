@@ -349,7 +349,7 @@ function validateIssue(issue) {
  * Decide whether the bot may reopen a closed issue.
  *
  * @param {{ active: boolean, closedAt: string|null, stateReason: string }} botState
- * @param {{ state: string, closed_at: string|null, state_reason: string|null }} issue
+ * @param {{ state: string, closed_at: string|null, state_reason: string|null, closed_by?: string|null }} issue
  * @param {boolean} maintainerOverride  True when a maintainer changed the issue state after the bot.
  * @returns {boolean}
  */
@@ -359,6 +359,9 @@ function shouldReopen(botState, issue, maintainerOverride) {
   if (maintainerOverride) return false;
   if (issue.closed_at !== botState.closedAt) return false;
   if (issue.state_reason !== botState.stateReason) return false;
+  // Only reopen if the bot itself was the last actor to close the issue.
+  // A human closing it (even with the same timestamp) means intentional closure.
+  if (issue.closed_by && issue.closed_by !== "github-actions[bot]") return false;
   return true;
 }
 
