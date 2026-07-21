@@ -55,7 +55,7 @@ import {
   recordCodexUpstreamOutcome,
   type CodexUpstreamOutcome,
 } from "../codex/routing";
-import { fetchWithResetRetry, fetchWithTransientRetry } from "../lib/upstream-retry";
+import { fetchWithResetRetry, fetchWithTransientRetry, applyUpstreamRecoveryInit } from "../lib/upstream-retry";
 import { ForwardAdmissionCredentialError, validateForwardAdmissionCredential } from "./auth-cors";
 import { listOpenAiForwardSidecarCandidates, resolveFirstUsableOpenAiSidecar, type ResolvedOpenAiForwardSidecar } from "../providers/openai-sidecar";
 import { applyOpenAiVirtualModel, resolveOpenAiCompactModel } from "../providers/openai-virtual-models";
@@ -395,9 +395,13 @@ export function sanitizeEncryptedContentInPlace(input: unknown): number {
   return rewritten;
 }
 
-export function sidecarOutcomeRecorder(config: OcxConfig, authCtx: CodexAuthContext): ((outcome: CodexUpstreamOutcome) => void) | undefined {
+export function sidecarOutcomeRecorder(
+  config: OcxConfig,
+  authCtx: CodexAuthContext,
+  threadId?: string | null,
+): ((outcome: CodexUpstreamOutcome) => void) | undefined {
   return authCtx.kind === "pool" || authCtx.kind === "main-pool"
-    ? outcome => recordCodexUpstreamOutcome(config, authCtx.accountId, outcome)
+    ? outcome => recordCodexUpstreamOutcome(config, authCtx.accountId, outcome, { threadId })
     : undefined;
 }
 
@@ -418,9 +422,21 @@ export function codexForwardTerminalOutcomeRecorder(
   config: OcxConfig,
   authCtx: CodexAuthContext,
   provider: OcxProviderConfig,
+  logCtx?: RequestLogContext,
+  threadId?: string | null,
 ): ((status: ResponsesTerminalStatus) => void) | undefined {
   if (!usesCodexForwardPoolAuth(authCtx, provider)) return undefined;
-  return status => recordCodexUpstreamOutcome(config, authCtx.accountId, status === "completed" ? 200 : 502);
+  return status => {
+    // Use the semantic HTTP status derived from the terminal SSE error payload
+    // (httpStatusFromTerminalError in request-log inspection) instead of collapsing
+    // every non-completed terminal to 502. A 400 invalid_request_error must not
+    // soft-avoid the account or rebind threads — only genuine transport/5xx failures
+    // should trigger transient health recording.
+    const outcome = status === "completed"
+      ? 200
+      : (logCtx?.terminalHttpStatus ?? 502);
+    recordCodexUpstreamOutcome(config, authCtx.accountId, outcome, { threadId });
+  };
 }
 
 /**
@@ -1092,11 +1108,11 @@ export async function handleResponses(
       upstreamResponse = await fetchWithTransientRetry(
         recovery => {
           noteAttemptSend(logCtx.activeAttempt, passthroughEstimate, recovery);
-          return fetchWithHeaderTimeout(request.url, {
+          return fetchWithHeaderTimeout(request.url, applyUpstreamRecoveryInit({
             method: request.method,
             headers: request.headers,
             body: request.body,
-          }, upstream.signal, connectMs, parsed.stream, providerFetch(route.provider));
+          }, recovery), upstream.signal, connectMs, parsed.stream, providerFetch(route.provider));
         },
         { abortSignal: upstream.signal, label: safeHostLabel(request.url) },
       );
@@ -1104,7 +1120,11 @@ export async function handleResponses(
       upstream.abort();
       if (options.abortSignal?.aborted) return clientCancelledResponse();
       const outcome = err instanceof Error && err.name === "TimeoutError" ? "timeout" : "connect_error";
-      if (usesCodexForwardPoolAuth(authCtx, route.provider)) recordCodexUpstreamOutcome(config, authCtx.accountId, outcome);
+      if (usesCodexForwardPoolAuth(authCtx, route.provider)) {
+        recordCodexUpstreamOutcome(config, authCtx.accountId, outcome, {
+          threadId: req.headers.get("x-codex-parent-thread-id"),
+        });
+      }
       const msg = outcome === "timeout"
         ? `Provider connect timeout after ${connectMs}ms`
         : `Provider unreachable: ${err instanceof Error ? err.message : String(err)}`;
@@ -1122,7 +1142,13 @@ export async function handleResponses(
     const passthroughCt = headers.get("content-type")?.toLowerCase();
     const isEventStream = passthroughCt?.includes("text/event-stream")
       || (upstreamResponse.ok && !!upstreamResponse.body && !passthroughCt && parsed.stream);
-    const terminalRecorder = codexForwardTerminalOutcomeRecorder(config, authCtx, route.provider);
+    const terminalRecorder = codexForwardTerminalOutcomeRecorder(
+      config,
+      authCtx,
+      route.provider,
+      logCtx,
+      req.headers.get("x-codex-parent-thread-id"),
+    );
     const terminalBodyWillRecord = !!terminalRecorder && upstreamResponse.ok && isEventStream;
     // Capture quota from upstream response for multi-account tracking
    if (usesCodexForwardPoolAuth(authCtx, route.provider)) {
@@ -1156,6 +1182,7 @@ export async function handleResponses(
         recordCodexUpstreamOutcome(config, authCtx.accountId, upstreamResponse.status, {
         retryAfter: retryAfterRaw,
          resetAt: [primaryResetRaw, secondaryResetRaw, monthlyResetRaw].filter(Boolean),
+         threadId: req.headers.get("x-codex-parent-thread-id"),
         });
       }
     }
@@ -1390,9 +1417,11 @@ export async function handleResponses(
       upstreamResponse = await fetchWithResetRetry(
         recovery => {
           noteAttemptSend(logCtx.activeAttempt, inputTokenEstimate, recovery);
-          return fetchWithHeaderTimeout(request.url, {
-            method: request.method, headers: request.headers, body: request.body,
-          }, upstream.signal, connectMs, parsed.stream, providerFetch(route.provider));
+          return fetchWithHeaderTimeout(request.url, applyUpstreamRecoveryInit({
+            method: request.method,
+            headers: request.headers,
+            body: request.body,
+          }, recovery), upstream.signal, connectMs, parsed.stream, providerFetch(route.provider));
         },
         { abortSignal: upstream.signal, label: safeHostLabel(request.url) },
       );
@@ -1710,10 +1739,11 @@ export async function handleResponsesCompact(
     // headers would run compaction on the wrong account (or 401) whenever a pool account is
     // active for this thread while normal turns succeed.
     let compactProvider = route.provider;
+    let authCtx: CodexAuthContext = { kind: "main", accountId: null };
     const headers = new Headers({ "content-type": "application/json" });
     try {
       if (route.codexAccountMode) {
-        const authCtx = await resolveCodexAuthContext(req.headers, config, route.codexAccountMode);
+        authCtx = await resolveCodexAuthContext(req.headers, config, route.codexAccountMode);
         const selected = headersForCodexAuthContext(req.headers, authCtx);
         compactProvider = applyCodexAuthContextToProvider(route.provider, authCtx, route.codexAccountMode);
         for (const name of FORWARD_HEADERS) {
@@ -1744,19 +1774,54 @@ export async function handleResponsesCompact(
     const base = (compactProvider.baseUrl ?? "").replace(/\/$/, "");
     if (compactProvider.apiKey) headers.set("authorization", `Bearer ${resolveEnvValue(compactProvider.apiKey)}`);
     const { reasoning: _reasoning, ...compactBody } = raw as typeof raw & { reasoning?: unknown };
+    const compactUrl = `${base}/responses/compact`;
+    const compactThreadId = req.headers.get("x-codex-parent-thread-id");
+    const connectMs = config.connectTimeoutMs ?? 200_000;
+    const recordCompactPoolOutcome = (outcome: CodexUpstreamOutcome, meta: { retryAfter?: string | null } = {}) => {
+      if (!usesCodexForwardPoolAuth(authCtx, route.provider)) return;
+      recordCodexUpstreamOutcome(config, authCtx.accountId, outcome, {
+        ...meta,
+        threadId: compactThreadId,
+      });
+    };
     let upstream: Response;
     try {
-      upstream = await fetch(`${base}/responses/compact`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ ...compactBody, model: route.modelId }),
-        signal: req.signal,
-      });
-    } catch {
+      // Same connect timeout + keep-alive reset + transient-5xx recovery as /v1/responses —
+      // compact hits the same ChatGPT host and must soft-avoid / clear affinity (#186).
+      upstream = await fetchWithTransientRetry(
+        recovery => fetchWithHeaderTimeout(
+          compactUrl,
+          applyUpstreamRecoveryInit({
+            method: "POST",
+            headers,
+            body: JSON.stringify({ ...compactBody, model: route.modelId }),
+          }, recovery),
+          req.signal,
+          connectMs,
+          false,
+          providerFetch(compactProvider),
+        ),
+        { abortSignal: req.signal, label: safeHostLabel(compactUrl) },
+      );
+    } catch (err) {
       if (req.signal.aborted) return formatErrorResponse(499, "client_cancelled", "Client cancelled compact request");
+      const outcome = err instanceof Error && err.name === "TimeoutError" ? "timeout" : "connect_error";
+      recordCompactPoolOutcome(outcome);
       return formatErrorResponse(502, "upstream_error", "Failed to connect to compact upstream");
     }
-    return bufferCompactResponse(upstream, req.signal);
+    const retryAfter = upstream.headers.get("retry-after");
+    const buffered = await bufferCompactResponse(upstream, req.signal);
+    // Record pool health only after the body is fully delivered (or definitively failed).
+    // A premature 200 would clear soft-avoid while the client still sees a buffer 502.
+    if (buffered.status === 499) {
+      return buffered;
+    }
+    if (upstream.ok && buffered.status >= 500) {
+      recordCompactPoolOutcome("connect_error");
+    } else {
+      recordCompactPoolOutcome(upstream.status, { retryAfter });
+    }
+    return buffered;
   }
 
   // ROUTED model: run the v2 synthetic-compaction turn internally (appends COMPACT_PROMPT, no
