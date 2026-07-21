@@ -219,9 +219,13 @@ export function probeScmRegistration(run: () => string = queryScmForService): bo
   } catch (err) {
     const e = err as { status?: number | null; stderr?: string | Buffer | null; stdout?: string | Buffer | null; message?: string };
     // sc.exe does not reliably channel the 1060 line — it can land on stderr OR stdout
-    // depending on the host — so scan every captured stream and the error message.
-    const text = [e.stderr, e.stdout, e.message]
-      .map(v => (typeof v === "string" ? v : ""))
+    // depending on the host — so scan both captured streams.
+    // e.message is intentionally excluded: it is a Node wrapper string that can embed
+    // arbitrary content (paths, spawn messages) that may contain "1060" coincidentally,
+    // which would produce a false confirmed-absence on an unrelated failure.
+    // Buffer values are decoded via .toString() to guard against missing encoding option.
+    const text = [e.stderr, e.stdout]
+      .map(v => (v instanceof Buffer ? v.toString() : typeof v === "string" ? v : ""))
       .join("\n");
     // Two traps hide the 1060 signal:
     // 1. Bun on Windows truncates exit codes to 8 bits, so 1060 arrives as status 36.

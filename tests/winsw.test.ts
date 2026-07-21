@@ -146,6 +146,15 @@ describe("winsw fail-closed lifecycle", () => {
     expect(probeScmRegistration(() => { const e = new Error("denied") as Error & { status: number }; e.status = 36; throw e; })).toBe("error");
   });
 
+  test("SCM probe guards e.message false positives and decodes Buffer streams", () => {
+    // e.message may embed "1060" incidentally (paths, spawn text) — must NOT count as absence.
+    expect(probeScmRegistration(() => { const e = new Error("Command failed: sc.exe query opencodex-proxy-native [1060]") as Error & { status: number }; e.status = 1; throw e; })).toBe("error");
+    // Buffer-typed stderr is decoded and still matched correctly.
+    expect(probeScmRegistration(() => { const e = new Error("fail") as Error & { status: number; stderr: Buffer }; e.status = 1; e.stderr = Buffer.from("[SC] OpenService FAILED 1060:"); throw e; })).toBe(false);
+    // Buffer-typed stdout likewise.
+    expect(probeScmRegistration(() => { const e = new Error("fail") as Error & { status: number; stdout: Buffer }; e.status = 36; e.stdout = Buffer.from("FALHA 1060"); throw e; })).toBe(false);
+  });
+
   test("uninstall removes a stale SCM registration via sc.exe when the exe is gone", () => {
     const winsw = readFileSync(new URL("../src/lib/winsw.ts", import.meta.url), "utf8");
     const fn = winsw.slice(winsw.indexOf("export function uninstallWinswService"), winsw.indexOf("export function winswStatusSummary"));
