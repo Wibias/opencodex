@@ -1,0 +1,367 @@
+name: Enforce issue quality
+
+on:
+  issues:
+    types:
+      - opened
+      - edited
+      - reopened
+
+permissions:
+  issues: write
+
+concurrency:
+  group: enforce-issue-quality-${{ github.event.issue.number }}
+
+jobs:
+  validate:
+    if: github.event.issue.pull_request == null
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate feature request quality
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const COMMENT_MARKER = "<!-- issue-quality-enforcer -->";
+            const STATE_PATTERN =
+              /<!-- issue-quality-enforcer-state:([\s\S]*?) -->/;
+
+            const CONTRIBUTING_URL =
+              "https://lidge-jun.github.io/opencodex/contributing/";
+
+            const { owner, repo } = context.repo;
+            const issue = context.payload.issue;
+            const issue_number = issue.number;
+
+            const labels = new Set(
+              (issue.labels ?? []).map(label =>
+                typeof label === "string" ? label : label.name
+              )
+            );
+
+            /*
+             * Only inspect feature requests.
+             *
+             * The feature form applies the "enhancement" label and uses
+             * the "[Feature]:" title prefix.
+             */
+            const isFeatureRequest =
+              labels.has("enhancement") ||
+              /^\[feature\]\s*:/i.test(issue.title);
+
+            if (!isFeatureRequest) {
+              core.info("Not a feature request. Skipping.");
+              return;
+            }
+
+            /*
+             * Maintainers may intentionally create short internal issues.
+             * Do not make the bot police its own maintainers.
+             */
+            const trustedAssociations = new Set([
+              "OWNER",
+              "MEMBER",
+              "COLLABORATOR"
+            ]);
+
+            if (trustedAssociations.has(issue.author_association)) {
+              core.info("Trusted repository contributor. Skipping.");
+              return;
+            }
+
+            function escapeRegExp(value) {
+              return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            }
+
+            function clean(value) {
+              return String(value ?? "")
+                .replace(/<!--([\s\S]*?)-->/g, "")
+                .replace(/^No response$/gim, "")
+                .trim();
+            }
+
+            function normalise(value) {
+              return clean(value)
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, " ")
+                .trim();
+            }
+
+            /*
+             * Remove meaningless introductory wording so that:
+             *
+             * "Need to add support for X"
+             * "We need to add support for X"
+             *
+             * are recognised as the same answer.
+             */
+            function canonicalise(value) {
+              return normalise(value)
+                .replace(
+                  /^(we\s+)?(need|want|would like)\s+to\s+/,
+                  ""
+                )
+                .trim();
+            }
+
+            function wordCount(value) {
+              const normalised = normalise(value);
+
+              return normalised
+                ? normalised.split(/\s+/).length
+                : 0;
+            }
+
+            function getSection(heading) {
+              const pattern = new RegExp(
+                `(?:^|\\r?\\n)###\\s+${escapeRegExp(heading)}\\s*\\r?\\n([\\s\\S]*?)(?=\\r?\\n###\\s+|$)`,
+                "i"
+              );
+
+              return clean(
+                issue.body?.match(pattern)?.[1]
+              );
+            }
+
+            function parseState(body) {
+              const match = body?.match(STATE_PATTERN);
+
+              if (!match) {
+                return null;
+              }
+
+              try {
+                return JSON.parse(match[1]);
+              } catch (error) {
+                core.warning(
+                  `Could not parse stored issue state: ${error.message}`
+                );
+
+                return null;
+              }
+            }
+
+            function stateMarker(state) {
+              return (
+                "<!-- issue-quality-enforcer-state:" +
+                JSON.stringify(state) +
+                " -->"
+              );
+            }
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner,
+                repo,
+                issue_number,
+                per_page: 100
+              }
+            );
+
+            const botComment = comments.find(
+              comment =>
+                comment.user?.login ===
+                  "github-actions[bot]" &&
+                comment.body?.includes(COMMENT_MARKER)
+            );
+
+            const storedState =
+              parseState(botComment?.body);
+
+            async function upsertComment(body) {
+              if (botComment) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: botComment.id,
+                  body
+                });
+
+                return;
+              }
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body
+              });
+            }
+
+            const problem =
+              getSection("Problem to solve");
+
+            const solution =
+              getSection("Proposed solution");
+
+            const title = issue.title.replace(
+              /^\[feature\]\s*:\s*/i,
+              ""
+            );
+
+            const reasons = [];
+
+            /*
+             * Reject genuinely empty or nearly empty sections.
+             */
+            if (
+              problem.length < 25 ||
+              wordCount(problem) < 5
+            ) {
+              reasons.push(
+                "The **Problem to solve** section is missing or too short to identify a concrete limitation."
+              );
+            }
+
+            if (
+              solution.length < 25 ||
+              wordCount(solution) < 5
+            ) {
+              reasons.push(
+                "The **Proposed solution** section is missing or too short to describe the expected behaviour."
+              );
+            }
+
+            /*
+             * Two extremely brief required sections usually provide no
+             * actionable context, even when each technically contains text.
+             */
+            if (
+              problem.length < 80 &&
+              solution.length < 80
+            ) {
+              reasons.push(
+                "Both required sections are too brief to provide enough actionable context."
+              );
+            }
+
+            /*
+             * The problem and solution must describe different things.
+             */
+            if (
+              canonicalise(problem) &&
+              canonicalise(problem) ===
+                canonicalise(solution)
+            ) {
+              reasons.push(
+                "The problem and proposed solution repeat the same text instead of describing two distinct things."
+              );
+            }
+
+            /*
+             * Reject submissions where the entire body merely repeats
+             * the title, as issue #208 does.
+             */
+            if (
+              canonicalise(title) &&
+              canonicalise(title) ===
+                canonicalise(problem) &&
+              canonicalise(title) ===
+                canonicalise(solution)
+            ) {
+              reasons.push(
+                "The issue body only repeats the title and adds no actionable detail."
+              );
+            }
+
+            const invalid = reasons.length > 0;
+
+            if (invalid) {
+              /*
+               * Do not take ownership of an issue that a maintainer
+               * already closed manually for another reason.
+               */
+              if (
+                issue.state === "closed" &&
+                !storedState?.active &&
+                context.payload.action === "edited"
+              ) {
+                core.info(
+                  "Issue is already closed manually and has no active bot state."
+                );
+
+                return;
+              }
+
+              const state = {
+                version: 1,
+                active: true
+              };
+
+              await upsertComment(
+                [
+                  COMMENT_MARKER,
+                  stateMarker(state),
+                  "",
+                  "### Issue closed: insufficient detail",
+                  "",
+                  "Thanks for the request. This issue was closed automatically because the required sections do not contain enough distinct, actionable information.",
+                  "",
+                  ...reasons.map(
+                    reason => `- ${reason}`
+                  ),
+                  "",
+                  "Please edit the issue to include:",
+                  "",
+                  "- the specific workflow or limitation you are trying to improve",
+                  "- the exact behaviour you expect",
+                  "- an example request, response, CLI command, configuration, or upstream API reference",
+                  "- why the existing behaviour is insufficient",
+                  "",
+                  `See the [Contributing guide](${CONTRIBUTING_URL}) for additional guidance. Once the issue contains enough detail, it will be reopened automatically.`
+                ].join("\n")
+              );
+
+              if (issue.state !== "closed") {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number,
+                  state: "closed",
+                  state_reason: "not_planned"
+                });
+              }
+
+              return;
+            }
+
+            /*
+             * Valid issue with no previous bot closure.
+             */
+            if (!storedState?.active) {
+              core.info(
+                "Issue passes validation and has no active bot state."
+              );
+
+              return;
+            }
+
+            /*
+             * The author edited the issue sufficiently.
+             * Reopen it only because this workflow previously closed it.
+             */
+            if (issue.state === "closed") {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number,
+                state: "open",
+                state_reason: "reopened"
+              });
+            }
+
+            await upsertComment(
+              [
+                COMMENT_MARKER,
+                stateMarker({
+                  version: 1,
+                  active: false
+                }),
+                "",
+                "### Issue reopened",
+                "",
+                "The issue now contains enough distinct information to pass the automated quality check. Thanks for updating it."
+              ].join("\n")
+            );
