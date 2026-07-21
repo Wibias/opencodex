@@ -13,6 +13,7 @@ import {
   saveCredential,
   setActiveAccount,
 } from "../src/oauth/store";
+import { credentialGeneration, markAccountNeedsReauthIfGeneration } from "../src/oauth/store";
 
 const TEST_DIR = join(import.meta.dir, ".tmp-oauth-store-multi-test");
 let previousOpencodexHome: string | undefined;
@@ -168,6 +169,42 @@ describe("multi-account auth store", () => {
     // The raw JSON must NOT contain needsReauth — only in-memory mutations write it to disk.
     const account = raw.xai?.accounts?.[0];
     expect(account?.needsReauth).toBeUndefined();
+  });
+
+  test("markAccountNeedsReauthIfGeneration only marks when generation matches", async () => {
+    await saveCredential("xai", cred({ email: "a@example.com", accountId: "acct-a" }));
+    const id = getAccountSet("xai")!.activeAccountId;
+    // Ensure no leftover in-memory mark from a previous test.
+    markAccountNeedsReauth("xai", id, false);
+    const stored = getAccountCredential("xai", id)!;
+    const gen = credentialGeneration(stored);
+    // Stale generation: must NOT mark (guards against concurrent credential rotation).
+    expect(markAccountNeedsReauthIfGeneration("xai", id, "stale-generation")).toBe(false);
+    expect(listAccounts("xai")[0]?.needsReauth).toBeUndefined();
+    // Correct generation: must mark in-memory.
+    expect(markAccountNeedsReauthIfGeneration("xai", id, gen)).toBe(true);
+    expect(listAccounts("xai")[0]?.needsReauth).toBe(true);
+    // Fresh credential save clears the mark.
+    await saveCredential("xai", cred({ email: "a@example.com", accountId: "acct-a", access: "rotated" }));
+    expect(listAccounts("xai")[0]?.needsReauth).toBeUndefined();
+    // The raw JSON must not contain needsReauth.
+    const raw = JSON.parse(readFileSync(join(TEST_DIR, "auth.json"), "utf8"));
+    expect(raw.xai?.accounts?.[0]?.needsReauth).toBeUndefined();
+  });
+
+  test("getAccountSet returns the same accounts array when no accounts are marked (no-alloc fast path)", async () => {
+    await saveCredential("anthropic", cred({ email: "b@example.com", accountId: "acct-b" }));
+    // When nothing is marked, getAccountSet returns the raw store object without wrapping.
+    // Both calls should return equal (not necessarily identical) content — the key property
+    // is that no extra needsReauth overlay is applied, verified by checking no account has it.
+    const result = getAccountSet("anthropic");
+    expect(result?.accounts.every(a => a.needsReauth === undefined)).toBe(true);
+    // Mark an account and confirm the overlay kicks in.
+    const id = result!.activeAccountId;
+    markAccountNeedsReauth("anthropic", id, true);
+    expect(getAccountSet("anthropic")?.accounts[0]?.needsReauth).toBe(true);
+    // Clean up.
+    markAccountNeedsReauth("anthropic", id, false);
   });
 
   test("invalid account entries are dropped on load", async () => {

@@ -290,7 +290,11 @@ export async function removeCredential(provider: string): Promise<void> {
 export function getAccountSet(provider: string): ProviderAccountSet | null {
   const set = loadAuthStore()[provider];
   if (!set) return null;
-  // Overlay in-memory needsReauth markers onto the loaded accounts.
+  // Fast path: skip allocation when nothing is marked for this provider.
+  if (inMemoryNeedsReauth.size === 0) return set;
+  const markedInProvider = set.accounts.some(a => inMemoryNeedsReauth.has(needsReauthKey(provider, a.id)));
+  if (!markedInProvider) return set;
+  // Overlay in-memory needsReauth markers onto the loaded accounts (only allocates when needed).
   const accounts = set.accounts.map(a =>
     inMemoryNeedsReauth.has(needsReauthKey(provider, a.id))
       ? { ...a, needsReauth: true as const }
@@ -346,7 +350,7 @@ export async function removeAccount(provider: string, accountId: string): Promis
   });
 }
 
-export async function markAccountNeedsReauth(provider: string, accountId: string, needsReauth: boolean): Promise<void> {
+export function markAccountNeedsReauth(provider: string, accountId: string, needsReauth: boolean): void {
   // Update in-memory marker (survives until process exit or credential save).
   const key = needsReauthKey(provider, accountId);
   if (needsReauth) inMemoryNeedsReauth.add(key);
@@ -354,4 +358,13 @@ export async function markAccountNeedsReauth(provider: string, accountId: string
 }
 
 export async function mergeAccountCredential(provider:string,accountId:string,credential:OAuthCredentials,opts:{expectedGeneration?:string;afterPrePersistRead?:()=>void|Promise<void>}={}):Promise<{superseded:false}|{superseded:true;stored:OAuthCredentials}>{const safe=normalizeCredential(credential);if(!safe)throw new Error("Refusing to persist invalid OAuth credential");return await mutateStore(async store=>{await opts.afterPrePersistRead?.();const account=store[provider]?.accounts.find(x=>x.id===accountId);if(!account)throw new Error(`OAuth account disappeared before persist: ${provider}`);if(opts.expectedGeneration!==undefined&&credentialGeneration(account.credential)!==opts.expectedGeneration)return{superseded:true,stored:account.credential};account.credential=safe;inMemoryNeedsReauth.delete(needsReauthKey(provider,accountId));return{superseded:false};});}
-export async function markAccountNeedsReauthIfGeneration(provider:string,accountId:string,generation:string):Promise<boolean>{return await mutateStore(store=>{const account=store[provider]?.accounts.find(x=>x.id===accountId);if(!account?.credential||credentialGeneration(account.credential)!==generation)return false;inMemoryNeedsReauth.add(needsReauthKey(provider,accountId));return true;});}
+export function markAccountNeedsReauthIfGeneration(provider: string, accountId: string, generation: string): boolean {
+  // Read the current credential generation without mutateStore: we only need to compare
+  // the generation to guard against a concurrent rotation replacing the credential between
+  // the refresh attempt and this mark. A plain store read is sufficient — if the generation
+  // has already moved on (concurrent refresh won), the mark is intentionally skipped.
+  const cred = getAccountCredential(provider, accountId);
+  if (!cred || credentialGeneration(cred) !== generation) return false;
+  inMemoryNeedsReauth.add(needsReauthKey(provider, accountId));
+  return true;
+}
