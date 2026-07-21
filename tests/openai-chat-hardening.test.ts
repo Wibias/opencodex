@@ -130,8 +130,8 @@ describe("openai-chat credential hardening", () => {
     });
   });
 
-  test("forwards prompt_cache_key to the outbound chat body when set", () => {
-    const adapter = createOpenAIChatAdapter(provider());
+  test("forwards prompt_cache_key to the outbound chat body when the provider opts in", () => {
+    const adapter = createOpenAIChatAdapter(provider({ promptCacheKey: true }));
     const req = parsed();
     req.options.promptCacheKey = "shared-prefix-v1";
 
@@ -140,8 +140,18 @@ describe("openai-chat credential hardening", () => {
     expect(body.prompt_cache_key).toBe("shared-prefix-v1");
   });
 
-  test("omits prompt_cache_key from the outbound chat body when unset", () => {
+  test("does not forward prompt_cache_key when the provider has not opted in", () => {
     const adapter = createOpenAIChatAdapter(provider());
+    const req = parsed();
+    req.options.promptCacheKey = "shared-prefix-v1";
+
+    const body = JSON.parse(adapter.buildRequest(req).body);
+
+    expect(body).not.toHaveProperty("prompt_cache_key");
+  });
+
+  test("omits prompt_cache_key from the outbound chat body when unset", () => {
+    const adapter = createOpenAIChatAdapter(provider({ promptCacheKey: true }));
 
     const body = JSON.parse(adapter.buildRequest(parsed()).body);
 
