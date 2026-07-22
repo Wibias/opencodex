@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   find-similar:
-    name: Find similar open issues
+    name: Find similar issues
     concurrency:
       group: issue-deduplicator-${{ github.event.issue.number }}
       cancel-in-progress: false
@@ -31,14 +31,15 @@ jobs:
         run: |
           set -eo pipefail
 
+          # Fetch open AND closed so the AI can surface already-answered duplicates
           gh issue list --repo "$REPO" \
-            --json number,title,body \
+            --json number,title,body,state \
             --limit 500 \
-            --state open \
+            --state all \
             --search "sort:created-desc" \
             | jq --arg cur "$ISSUE_NUMBER" '[
                 .[] | select(.number != ($cur | tonumber)) |
-                { number, title, body: ((.body // "")[0:800]) }
+                { number, title, state, body: ((.body // "")[0:800]) }
               ]' \
             > existing-issues.json
 
@@ -47,38 +48,34 @@ jobs:
             | jq '{ number, title, body: ((.body // "")[0:2000]) }' \
             > current-issue.json
 
-          echo "open_count=$(jq 'length' existing-issues.json)"
+          echo "issue_count=$(jq 'length' existing-issues.json)"
 
-          # Write the full prompt to a file so actions/ai-inference can read it
-          cat > dedup-prompt.txt <<'PROMPT'
-New issue (JSON):
-PROMPT
-          cat current-issue.json >> dedup-prompt.txt
-          cat >> dedup-prompt.txt <<'PROMPT'
-
-Existing open issues (JSON array):
-PROMPT
-          cat existing-issues.json >> dedup-prompt.txt
-          cat >> dedup-prompt.txt <<'PROMPT'
-
-Return a JSON object with this exact shape and nothing else:
-{"issues": ["<number>", ...], "reason": "<one sentence>"}
-
-List only issue numbers (as strings) that are clear duplicates of the new
-issue. At most five. Empty array if none are convincing matches.
-PROMPT
+          # Build prompt file without heredocs (avoids YAML/bash indentation conflict)
+          {
+            printf 'New issue (JSON):\n'
+            cat current-issue.json
+            printf '\n\nExisting issues — open and closed (JSON array):\n'
+            cat existing-issues.json
+            printf '\n\nReturn a JSON object with this exact shape and nothing else:\n'
+            printf '{"issues": ["<number>", ...], "reason": "<one sentence>"}\n'
+            printf '\nList only issue numbers (as strings) that describe the same underlying\n'
+            printf 'problem or request as the new issue. Closed issues are valid matches if\n'
+            printf 'they already answer or resolve it. At most five. Empty array if no\n'
+            printf 'convincing matches exist.\n'
+          } > dedup-prompt.txt
 
       - name: Run semantic duplicate detection
         id: ai
-        uses: actions/ai-inference@v1
+        uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
         with:
           model: openai/gpt-4o-mini
           max-completion-tokens: 200
           system-prompt: >
             You are a GitHub issue triage assistant. Identify duplicate issues
             based on semantic similarity — same underlying problem, error, or
-            feature request — not just shared keywords. Respond only with the
-            requested JSON. No markdown, no explanation outside the JSON.
+            feature request — not just shared keywords. Closed issues are valid
+            matches if they already answer or resolve the new one. Respond only
+            with the requested JSON. No markdown, no explanation outside the JSON.
           prompt-file: dedup-prompt.txt
 
       - name: Post duplicate comment
@@ -87,11 +84,12 @@ PROMPT
           AI_RESPONSE: ${{ steps.ai.outputs.response }}
         with:
           script: |
+            const fs = require('fs');
             const { owner, repo } = context.repo;
             const issue = context.payload.issue;
             const BOT_MARKER = "<!-- opencodex-dedup-bot -->";
 
-            // Always fetch existing bot comment first — needed for both match and no-match paths
+            // Always fetch existing bot comment first — needed for both paths
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: issue.number, per_page: 100,
             });
@@ -102,7 +100,6 @@ PROMPT
             const raw = process.env.AI_RESPONSE ?? '';
             let parsed;
             try {
-              // Strip potential markdown code fences
               const cleaned = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
               parsed = JSON.parse(cleaned);
             } catch (err) {
@@ -110,15 +107,18 @@ PROMPT
               return;
             }
 
+            // Build a whitelist of numbers we actually fetched — guards against hallucinations
+            const fetched = JSON.parse(fs.readFileSync('existing-issues.json', 'utf8'));
+            const validNums = new Set(fetched.map(i => String(i.number)));
+
             const currentNum = String(issue.number);
             const matches = [...new Set(
               (Array.isArray(parsed?.issues) ? parsed.issues : [])
                 .map(String)
-                .filter(n => n !== currentNum)
+                .filter(n => n !== currentNum && validNums.has(n))
             )].slice(0, 5);
 
             if (matches.length === 0) {
-              // Clean up a stale duplicate comment from a prior run if present
               if (existing) {
                 await github.rest.issues.deleteComment({
                   owner, repo, comment_id: existing.id,
@@ -130,14 +130,21 @@ PROMPT
               return;
             }
 
-            const list = matches.map(n => `- #${n}`).join('\n');
+            // Annotate closed matches so reporters know they may already have an answer
+            const closedNums = new Set(
+              fetched.filter(i => i.state === 'closed').map(i => String(i.number))
+            );
+            const list = matches
+              .map(n => closedNums.has(n) ? `- #${n} _(closed)_` : `- #${n}`)
+              .join('\n');
+
             const body = [
               BOT_MARKER,
               'Potential duplicates found — please check whether your issue is already covered:',
               '',
               list,
               '',
-              '_Detected automatically via GitHub Models. Matches may not be exact._',
+              '_Detected automatically via GitHub Models. Closed issues may already contain an answer. Matches may not be exact._',
             ].join('\n');
 
             if (existing) {
