@@ -259,6 +259,23 @@ export default function Logs({ apiBase }: { apiBase: string }) {
   // The hash is the source of truth for the active tab (#logs vs #logs/debug),
   // so refresh/bookmark/back-forward keep the tab choice.
   const [tab, setTab] = useState<LogsTab>(readTabFromHash);
+  // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
+  const [workspaceView, setWorkspaceView] = useState(() => {
+    try {
+      return localStorage.getItem("ocx-logs-view") === "workspace";
+    } catch {
+      return false;
+    }
+  });
+  const toggleWorkspace = () => {
+    const next = !workspaceView;
+    try {
+      localStorage.setItem("ocx-logs-view", next ? "workspace" : "classic");
+    } catch {
+      /* ignore */
+    }
+    setWorkspaceView(next);
+  };
 
   useEffect(() => {
     const onHash = () => setTab(readTabFromHash());
@@ -309,54 +326,8 @@ export default function Logs({ apiBase }: { apiBase: string }) {
     ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
     : 0;
 
-  return (
+  const logsBody = (
     <>
-      <div className="page-head">
-        <h2>{t("nav.logs")}</h2>
-        {tab === "logs" && (
-          <label className="muted text-control" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
-            {t("logs.autoRefresh")}
-          </label>
-        )}
-      </div>
-      <div className="page-tabs" role="tablist" aria-label={t("nav.logs")}>
-        <button
-          type="button"
-          role="tab"
-          id="logs-tab-logs"
-          aria-selected={tab === "logs"}
-          aria-controls="logs-panel-logs"
-          tabIndex={tab === "logs" ? 0 : -1}
-          className={`page-tab${tab === "logs" ? " page-tab--active" : ""}`}
-          onClick={() => selectTab("logs")}
-          onKeyDown={onTabKeyDown}
-        >
-          {t("logs.tabLogs")}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="logs-tab-debug"
-          aria-selected={tab === "debug"}
-          aria-controls="logs-panel-debug"
-          tabIndex={tab === "debug" ? 0 : -1}
-          className={`page-tab${tab === "debug" ? " page-tab--active" : ""}`}
-          onClick={() => selectTab("debug")}
-          onKeyDown={onTabKeyDown}
-        >
-          {t("logs.tabDebug")}
-        </button>
-      </div>
-
-      {tab === "debug" && (
-        <div role="tabpanel" id="logs-panel-debug" aria-labelledby="logs-tab-debug">
-          <Debug apiBase={apiBase} embedded />
-        </div>
-      )}
-
-      {tab === "logs" && (
-      <div role="tabpanel" id="logs-panel-logs" aria-labelledby="logs-tab-logs">
       <p className="page-sub">{t("logs.subtitle")}</p>
 
       <div className="row" style={{ gap: 8, marginBottom: 12, alignItems: "center" }}>
@@ -486,7 +457,111 @@ export default function Logs({ apiBase }: { apiBase: string }) {
       {detail && (
         <LogDetailDialog detail={detail} detailInfo={detailInfo} localeCode={locale} localeTag={localeTag} t={t} onClose={() => setDetail(null)} />
       )}
+    </>
+  );
+
+  const debugBody = <Debug apiBase={apiBase} embedded />;
+
+  if (workspaceView) {
+    return (
+      <div className="logs-workspace-shell">
+        <div className="page-head">
+          <h2>{t("nav.logs")}</h2>
+          <div className="row">
+            {tab === "logs" && (
+              <label className="muted text-control" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
+                {t("logs.autoRefresh")}
+              </label>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.classicToggle")}</button>
+          </div>
+        </div>
+        <div className="logs-workspace-root">
+          <aside className="logs-workspace-rail" aria-label={t("nav.logs")}>
+            <div className="logs-workspace-rail-header">
+              <span className="logs-workspace-rail-title">{t("nav.logs")}</span>
+            </div>
+            <div className="logs-workspace-rail-list">
+              <button
+                type="button"
+                className={`logs-workspace-rail-row${tab === "logs" ? " logs-workspace-rail-row--selected" : ""}`}
+                onClick={() => selectTab("logs")}
+                aria-current={tab === "logs" ? "true" : undefined}
+              >
+                <span className="logs-workspace-rail-name">{t("logs.tabLogs")}</span>
+              </button>
+              <button
+                type="button"
+                className={`logs-workspace-rail-row${tab === "debug" ? " logs-workspace-rail-row--selected" : ""}`}
+                onClick={() => selectTab("debug")}
+                aria-current={tab === "debug" ? "true" : undefined}
+              >
+                <span className="logs-workspace-rail-name">{t("logs.tabDebug")}</span>
+              </button>
+            </div>
+          </aside>
+          <main className="logs-workspace-main">
+            <div className="lgw-body">{tab === "debug" ? debugBody : logsBody}</div>
+          </main>
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="page-head">
+        <h2>{t("nav.logs")}</h2>
+        <div className="row">
+            {tab === "logs" && (
+              <label className="muted text-control" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
+                {t("logs.autoRefresh")}
+              </label>
+            )}
+          <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.workspaceToggle")}</button>
+        </div>
+      </div>
+      <div className="page-tabs" role="tablist" aria-label={t("nav.logs")}>
+        <button
+          type="button"
+          role="tab"
+          id="logs-tab-logs"
+          aria-selected={tab === "logs"}
+          aria-controls="logs-panel-logs"
+          tabIndex={tab === "logs" ? 0 : -1}
+          className={`page-tab${tab === "logs" ? " page-tab--active" : ""}`}
+          onClick={() => selectTab("logs")}
+          onKeyDown={onTabKeyDown}
+        >
+          {t("logs.tabLogs")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="logs-tab-debug"
+          aria-selected={tab === "debug"}
+          aria-controls="logs-panel-debug"
+          tabIndex={tab === "debug" ? 0 : -1}
+          className={`page-tab${tab === "debug" ? " page-tab--active" : ""}`}
+          onClick={() => selectTab("debug")}
+          onKeyDown={onTabKeyDown}
+        >
+          {t("logs.tabDebug")}
+        </button>
+      </div>
+
+      {tab === "debug" && (
+        <div role="tabpanel" id="logs-panel-debug" aria-labelledby="logs-tab-debug">
+          {debugBody}
+        </div>
+      )}
+
+      {tab === "logs" && (
+        <div role="tabpanel" id="logs-panel-logs" aria-labelledby="logs-tab-logs">
+          {logsBody}
+        </div>
       )}
     </>
   );
