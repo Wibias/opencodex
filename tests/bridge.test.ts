@@ -510,4 +510,22 @@ describe("Responses bridge stopReason threading (issue #246)", () => {
     expect(frames.find(f => f.event === "response.completed")).toBeDefined();
     expect(frames.find(f => f.event === "response.incomplete")).toBeUndefined();
   });
+
+  test("batch buildResponseJSON with stopReason max_tokens returns incomplete status", () => {
+    const json = buildResponseJSON([
+      { type: "text_delta", text: "partial" },
+      { type: "done", stopReason: "max_tokens" },
+    ], "routed/model");
+    expect(json.status).toBe("incomplete");
+    expect(json.incomplete_details).toEqual({ reason: "max_output_tokens" });
+  });
+
+  test("batch buildResponseJSON without stopReason returns completed status", () => {
+    const json = buildResponseJSON([
+      { type: "text_delta", text: "hello" },
+      { type: "done" },
+    ], "routed/model");
+    expect(json.status).toBe("completed");
+    expect(json.incomplete_details).toBeUndefined();
+  });
 });

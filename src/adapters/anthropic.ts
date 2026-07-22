@@ -634,11 +634,13 @@ export function createAnthropicAdapter(provider: OcxProviderConfig, cacheRetenti
           // default 8192-token request can spend everything on thought and return empty text.
           body.thinking = { type: "adaptive" };
           body.output_config = { effort: adaptiveEffort(parsed.options.reasoning) };
-          const maxOut = parsed.options.maxOutputTokens ?? DEFAULT_MAX_TOKENS;
-          body.max_tokens = Math.min(
-            REASONING_MAX_TOKENS_CEILING,
-            Math.max(maxOut, reasoningBudget(adaptiveEffort(parsed.options.reasoning)) + OUTPUT_HEADROOM),
-          );
+          const explicitMaxOut = parsed.options.maxOutputTokens;
+          const wantBudget = reasoningBudget(parsed.options.reasoning);
+          const floor = wantBudget + OUTPUT_HEADROOM;
+          // Respect explicit caller values above the default ceiling; only cap when using the default.
+          body.max_tokens = explicitMaxOut !== undefined
+            ? Math.max(explicitMaxOut, floor)
+            : Math.min(REASONING_MAX_TOKENS_CEILING, Math.max(DEFAULT_MAX_TOKENS, floor));
         } else {
           // Anthropic requires max_tokens > thinking.budget_tokens (max_tokens caps thinking +
           // visible output) and budget_tokens >= 1024. Codex sends the SAME value for both, which

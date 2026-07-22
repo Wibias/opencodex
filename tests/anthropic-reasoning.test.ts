@@ -78,6 +78,12 @@ describe("anthropic extended-thinking gate", () => {
     expect(b.max_tokens as number).toBeGreaterThanOrEqual(16000);
   });
 
+  test("adaptive-thinking model preserves explicit maxOutputTokens above the default ceiling", async () => {
+    const b = await bodyOf(parsed("max", { maxOutputTokens: 64000 }, "claude-fable-5"));
+    // Explicit caller values above 32k must not be silently capped.
+    expect(b.max_tokens as number).toBe(64000);
+  });
+
   test.each([
     ["high", 24_576],
     ["xhigh", 32_000],
