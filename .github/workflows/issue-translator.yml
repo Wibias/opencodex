@@ -62,6 +62,9 @@ jobs:
     name: Apply translation
     needs: detect-and-translate
     if: needs.detect-and-translate.result == 'success'
+    concurrency:
+      group: issue-translator-${{ github.event.issue.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       issues: write  # write access only after inference is complete
