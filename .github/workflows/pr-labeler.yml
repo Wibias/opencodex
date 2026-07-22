@@ -54,6 +54,23 @@ jobs:
             const detected = match ? PREFIX_TO_LABEL[match[1].toLowerCase()] : null;
 
             if (!detected) {
+              // Clear any stale type labels left from a previous prefix.
+              const { data: staleCheck } = await github.rest.issues.listLabelsOnIssue({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                issue_number: pr,
+              });
+              for (const label of staleCheck) {
+                if (TYPE_LABELS.has(label.name)) {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo:  context.repo.repo,
+                    issue_number: pr,
+                    name: label.name,
+                  });
+                }
+              }
+
               const creator = context.payload.pull_request.user.login;
               const existing = await github.rest.issues.listComments({
                 owner: context.repo.owner,
