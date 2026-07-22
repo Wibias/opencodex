@@ -71,8 +71,15 @@ jobs:
             const raw = process.env.AI_RESPONSE ?? '';
             let parsed;
             try {
-              const cleaned = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
-              parsed = JSON.parse(cleaned);
+              // Try parsing as-is first; only strip outer fences if that fails.
+              // Avoid /m flag — it makes $ match mid-string newlines and can
+              // truncate the payload when the translated body contains code fences.
+              try {
+                parsed = JSON.parse(raw.trim());
+              } catch {
+                const stripped = raw.trim().replace(/^```(?:json)?\s*\n/, '').replace(/\n```\s*$/, '');
+                parsed = JSON.parse(stripped);
+              }
             } catch (err) {
               core.warning(`AI response was not valid JSON: ${raw}`);
               return;
@@ -83,8 +90,8 @@ jobs:
               return;
             }
 
-            const title = typeof parsed.translated_title === 'string'
-              ? parsed.translated_title.trim() : '';
+            const title = (typeof parsed.translated_title === 'string'
+              ? parsed.translated_title.trim() : '').slice(0, 256); // GitHub title limit
             const body  = typeof parsed.translated_body  === 'string'
               ? parsed.translated_body.trim()  : '';
             const lang  = typeof parsed.detected_language === 'string'
@@ -107,8 +114,8 @@ jobs:
               return;
             }
 
-            // Guard: don't post twice (e.g. if the workflow re-runs)
-            const { data: comments } = await github.rest.issues.listComments({
+            // Guard: don't post twice — paginate to handle issues with >100 comments
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number, per_page: 100,
             });
             if (comments.some(c => c.body?.includes(MARKER))) {
