@@ -92,8 +92,8 @@ describe("anthropic extended-thinking gate", () => {
 
   test.each([
     ["high", 24_576],
-    ["xhigh", 32_000],
-    ["max", 32_000],
+    ["xhigh", 32_768],
+    ["max", 40_192],
   ])("adaptive-thinking %s effort reserves visible-output headroom", async (effort, expected) => {
     const b = await bodyOf(parsed(effort, {}, "claude-fable-5"));
     expect(b.max_tokens).toBe(expected);
