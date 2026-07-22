@@ -63,6 +63,21 @@ describe("anthropic extended-thinking gate", () => {
     expect(b.output_config).toEqual({ effort: "low" });
   });
 
+  test("adaptive-thinking model resizes max_tokens for high effort (issue #246)", async () => {
+    const b = await bodyOf(parsed("max", {}, "claude-fable-5"));
+    // max_tokens must exceed the default 8192 ceiling so adaptive thinking at max effort
+    // does not exhaust the entire budget on internal thinking with zero visible output.
+    expect(b.max_tokens as number).toBeGreaterThan(8192);
+    expect(b.max_tokens as number).toBeLessThanOrEqual(32_000);
+    expect(b.thinking).toEqual({ type: "adaptive" });
+    expect(b.output_config).toEqual({ effort: "max" });
+  });
+
+  test("adaptive-thinking model respects explicit maxOutputTokens when larger", async () => {
+    const b = await bodyOf(parsed("low", { maxOutputTokens: 16000 }, "claude-fable-5"));
+    expect(b.max_tokens as number).toBeGreaterThanOrEqual(16000);
+  });
+
   test.each([
     ["high", 24_576],
     ["xhigh", 32_000],

@@ -854,10 +854,11 @@ export function createAnthropicAdapter(provider: OcxProviderConfig, cacheRetenti
         }
       }
       const usage = json.usage as Record<string, number> | undefined;
+      const stopReason = typeof json.stop_reason === "string" ? json.stop_reason : undefined;
       events.push({
         type: "done",
         usage: usageFromAnthropic(usage),
-        ...(typeof json.stop_reason === "string" ? { stopReason: json.stop_reason } : {}),
+        ...(stopReason ? { stopReason } : {}),
       });
       return events;
     },
