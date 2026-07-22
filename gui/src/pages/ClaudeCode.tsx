@@ -48,7 +48,7 @@ export default function ClaudeCode({ apiBase }: { apiBase: string }) {
   const [ok, setOk] = useState(false);
   const [loading, setLoading] = useState(true);
   // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
-  const [workspaceView, setWorkspaceView] = useState(() => {
+  const [workspaceView] = useState(() => {
     try {
       return localStorage.getItem("ocx-claudecode-view") === "workspace";
     } catch {
@@ -56,15 +56,6 @@ export default function ClaudeCode({ apiBase }: { apiBase: string }) {
     }
   });
   const [selectedSection, setSelectedSection] = useState("settings");
-  const toggleWorkspace = () => {
-    const next = !workspaceView;
-    try {
-      localStorage.setItem("ocx-claudecode-view", next ? "workspace" : "classic");
-    } catch {
-      /* ignore */
-    }
-    setWorkspaceView(next);
-  };
 
   const load = useCallback(async () => {
     try {
@@ -401,9 +392,6 @@ export default function ClaudeCode({ apiBase }: { apiBase: string }) {
       <div className="claudecode-workspace-shell">
         <div className="page-head">
           <h2>{t("claude.pageTitle")}</h2>
-          <div className="row">
-            <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.classicToggle")}</button>
-          </div>
         </div>
         <p className="page-sub">{t("claude.subtitle")}</p>
         {status && <Notice tone={ok ? "ok" : "err"}>{status}</Notice>}
@@ -438,9 +426,6 @@ export default function ClaudeCode({ apiBase }: { apiBase: string }) {
     <>
       <div className="page-head">
         <h2>{t("claude.pageTitle")}</h2>
-        <div className="row">
-          <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.workspaceToggle")}</button>
-        </div>
       </div>
       <p className="page-sub">{t("claude.subtitle")}</p>
       {status && <Notice tone={ok ? "ok" : "err"}>{status}</Notice>}

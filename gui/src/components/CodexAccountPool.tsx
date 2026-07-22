@@ -21,7 +21,7 @@ export interface CodexAccountEntry {
  * (the Codex Auth page passes its mode banner); `embedded` (WP090) omits page
  * chrome — currently a no-op stub reserved for the Providers workspace.
  */
-export default function CodexAccountPool({ apiBase, accountModeState = null, banner = null, embedded = false, workspaceView = false, selectedAccountId = null, onSelectAccount, onToggleWorkspace, onActiveNeedsReauthChange }: {
+export default function CodexAccountPool({ apiBase, accountModeState = null, banner = null, embedded = false, workspaceView = false, selectedAccountId = null, onSelectAccount, onActiveNeedsReauthChange }: {
   apiBase: string;
   accountModeState?: CodexAccountModeState | null;
   banner?: ReactNode;
@@ -29,7 +29,6 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
   workspaceView?: boolean;
   selectedAccountId?: string | null;
   onSelectAccount?: (id: string | null) => void;
-  onToggleWorkspace?: () => void;
   onActiveNeedsReauthChange?: (needs: boolean) => void;
 }) {
   const t = useT();
@@ -412,9 +411,6 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
               <button className="btn btn-sm btn-ghost" onClick={refreshQuotas} disabled={refreshingQuota}>
                 <IconRefresh width={14} /> {refreshingQuota ? t("codexAuth.refreshingQuota") : t("codexAuth.refreshQuota")}
               </button>
-              {onToggleWorkspace && (
-                <button className="btn btn-sm btn-ghost" onClick={onToggleWorkspace}>{t("pws.classicToggle")}</button>
-              )}
             </div>
           </div>
         )}
@@ -590,9 +586,6 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
             <button className="btn btn-sm btn-ghost" onClick={refreshQuotas} disabled={refreshingQuota}>
               <IconRefresh width={14} /> {refreshingQuota ? t("codexAuth.refreshingQuota") : t("codexAuth.refreshQuota")}
             </button>
-            {onToggleWorkspace && (
-              <button className="btn btn-sm btn-ghost" onClick={onToggleWorkspace}>{t("pws.workspaceToggle")}</button>
-            )}
           </div>
         </div>
       )}

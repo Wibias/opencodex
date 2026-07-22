@@ -12,7 +12,7 @@ export default function CodexAuth({ apiBase }: { apiBase: string }) {
   const t = useT();
   const [accountModeState, setAccountModeState] = useState<CodexAccountModeState | null>(null);
   // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
-  const [workspaceView, setWorkspaceView] = useState(() => {
+  const [workspaceView] = useState(() => {
     try {
       return localStorage.getItem("ocx-codexauth-view") === "workspace";
     } catch {
@@ -20,15 +20,6 @@ export default function CodexAuth({ apiBase }: { apiBase: string }) {
     }
   });
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const toggleWorkspace = () => {
-    const next = !workspaceView;
-    try {
-      localStorage.setItem("ocx-codexauth-view", next ? "workspace" : "classic");
-    } catch {
-      /* ignore */
-    }
-    setWorkspaceView(next);
-  };
 
   const loadMode = useCallback(async () => {
     try {
@@ -79,7 +70,6 @@ export default function CodexAuth({ apiBase }: { apiBase: string }) {
       workspaceView={workspaceView}
       selectedAccountId={selectedAccountId}
       onSelectAccount={setSelectedAccountId}
-      onToggleWorkspace={toggleWorkspace}
     />
   );
 }

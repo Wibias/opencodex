@@ -653,7 +653,7 @@ export default function Usage({ apiBase }: { apiBase: string }) {
   const [loading, setLoading] = useState(true);
   const [modelQuery, setModelQuery] = useState("");
   // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
-  const [workspaceView, setWorkspaceView] = useState(() => {
+  const [workspaceView] = useState(() => {
     try {
       return localStorage.getItem("ocx-usage-view") === "workspace";
     } catch {
@@ -661,15 +661,6 @@ export default function Usage({ apiBase }: { apiBase: string }) {
     }
   });
   const [selectedSection, setSelectedSection] = useState("overview");
-  const toggleWorkspace = () => {
-    const next = !workspaceView;
-    try {
-      localStorage.setItem("ocx-usage-view", next ? "workspace" : "classic");
-    } catch {
-      /* ignore */
-    }
-    setWorkspaceView(next);
-  };
 
   const fetchUsage = useCallback(async (nextRange: Range, nextSurface: UsageSurface, signal: AbortSignal) => {
     setLoading(true);
@@ -725,9 +716,6 @@ export default function Usage({ apiBase }: { apiBase: string }) {
         <h2 id="usage-page-title">{t("usage.title")}</h2>
         <div className="row">
           <UsageFilters surface={surface} range={range} onSurface={setSurface} onRange={setRange} t={t} />
-          <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>
-            {workspaceView ? t("pws.classicToggle") : t("pws.workspaceToggle")}
-          </button>
         </div>
       </div>
       <p className="page-sub">{t("usage.subtitle")}</p>

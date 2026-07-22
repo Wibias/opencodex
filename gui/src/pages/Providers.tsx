@@ -143,17 +143,6 @@ export default function Providers({ apiBase }: { apiBase: string }) {
     }
     return () => window.removeEventListener("hashchange", onHash);
   }, [workspaceView]);
-  const toggleWorkspace = () => {
-    const next = !workspaceView;
-    try {
-      localStorage.setItem("ocx-providers-view", next ? "workspace" : "classic");
-    } catch {
-      /* ignore */
-    }
-    setWorkspaceView(next);
-    location.hash = next ? "#providers/workspace" : "#providers";
-  };
-
   const fetchConfig = useCallback(async () => {
     try {
       const res = await fetch(`${apiBase}/api/config`);
@@ -889,7 +878,6 @@ export default function Providers({ apiBase }: { apiBase: string }) {
         <div className="page-head">
           <h2>{t("nav.providers")}</h2>
           <div className="row">
-            <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.classicToggle")}</button>
             <button className="btn btn-primary" onClick={() => setAdding(true)}><IconPlus />{t("prov.add")}</button>
           </div>
         </div>
@@ -1020,9 +1008,6 @@ export default function Providers({ apiBase }: { apiBase: string }) {
       <div className="page-head">
         <h2>{t("nav.providers")}</h2>
         <div className="row">
-          <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>
-            {workspaceView ? t("pws.classicToggle") : t("pws.workspaceToggle")}
-          </button>
           {editing ? (
             <>
               <button className="btn btn-primary" onClick={saveConfig}>{t("common.save")}</button>

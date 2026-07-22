@@ -260,22 +260,13 @@ export default function Logs({ apiBase }: { apiBase: string }) {
   // so refresh/bookmark/back-forward keep the tab choice.
   const [tab, setTab] = useState<LogsTab>(readTabFromHash);
   // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
-  const [workspaceView, setWorkspaceView] = useState(() => {
+  const [workspaceView] = useState(() => {
     try {
       return localStorage.getItem("ocx-logs-view") === "workspace";
     } catch {
       return false;
     }
   });
-  const toggleWorkspace = () => {
-    const next = !workspaceView;
-    try {
-      localStorage.setItem("ocx-logs-view", next ? "workspace" : "classic");
-    } catch {
-      /* ignore */
-    }
-    setWorkspaceView(next);
-  };
 
   useEffect(() => {
     const onHash = () => setTab(readTabFromHash());
@@ -474,7 +465,6 @@ export default function Logs({ apiBase }: { apiBase: string }) {
                 {t("logs.autoRefresh")}
               </label>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.classicToggle")}</button>
           </div>
         </div>
         <div className="logs-workspace-root">
@@ -520,7 +510,6 @@ export default function Logs({ apiBase }: { apiBase: string }) {
                 {t("logs.autoRefresh")}
               </label>
             )}
-          <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.workspaceToggle")}</button>
         </div>
       </div>
       <div className="page-tabs" role="tablist" aria-label={t("nav.logs")}>

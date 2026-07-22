@@ -81,22 +81,13 @@ export default function Storage({ apiBase }: { apiBase: string }) {
   const [data, setData] = useState<StorageReport | null>(null);
   const [loading, setLoading] = useState(true);
   // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
-  const [workspaceView, setWorkspaceView] = useState(() => {
+  const [workspaceView] = useState(() => {
     try {
       return localStorage.getItem("ocx-storage-view") === "workspace";
     } catch {
       return false;
     }
   });
-  const toggleWorkspace = () => {
-    const next = !workspaceView;
-    try {
-      localStorage.setItem("ocx-storage-view", next ? "workspace" : "classic");
-    } catch {
-      /* ignore */
-    }
-    setWorkspaceView(next);
-  };
 
   const fetchStorage = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -138,7 +129,6 @@ export default function Storage({ apiBase }: { apiBase: string }) {
             <button type="button" className="btn btn-ghost btn-sm" disabled={loading} onClick={() => void fetchStorage()}>
               <IconRefresh /> {t("storage.refresh")}
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.classicToggle")}</button>
           </div>
         </div>
         <StorageWorkspace report={data} locale={locale} />
@@ -154,7 +144,6 @@ export default function Storage({ apiBase }: { apiBase: string }) {
           <button type="button" className="btn btn-ghost btn-sm" disabled={loading} onClick={() => void fetchStorage()}>
             <IconRefresh /> {t("storage.refresh")}
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.workspaceToggle")}</button>
         </div>
       </div>
       <p className="page-sub">{t("storage.subtitle")}</p>
