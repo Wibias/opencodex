@@ -65,17 +65,23 @@ describe("anthropic extended-thinking gate", () => {
 
   test("adaptive-thinking model resizes max_tokens for high effort (issue #246)", async () => {
     const b = await bodyOf(parsed("max", {}, "claude-fable-5"));
-    // max_tokens must exceed the default 8192 ceiling so adaptive thinking at max effort
-    // does not exhaust the entire budget on internal thinking with zero visible output.
-    expect(b.max_tokens as number).toBeGreaterThan(8192);
-    expect(b.max_tokens as number).toBeLessThanOrEqual(32_000);
+    // Exact regression: effort=max budget is 32000; adaptive ceiling adds OUTPUT_HEADROOM (8192)
+    // so max_tokens = 40192, genuinely above the reasoning budget at full effort.
+    expect(b.max_tokens as number).toBe(40_192);
     expect(b.thinking).toEqual({ type: "adaptive" });
     expect(b.output_config).toEqual({ effort: "max" });
   });
 
-  test("adaptive-thinking model respects explicit maxOutputTokens when larger", async () => {
+  test("adaptive-thinking model preserves explicit maxOutputTokens (not raised)", async () => {
     const b = await bodyOf(parsed("low", { maxOutputTokens: 16000 }, "claude-fable-5"));
-    expect(b.max_tokens as number).toBeGreaterThanOrEqual(16000);
+    // Explicit caller value must be used exactly; the adapter must not silently raise it.
+    expect(b.max_tokens as number).toBe(16000);
+  });
+
+  test("adaptive-thinking model does not raise a small explicit maxOutputTokens", async () => {
+    const b = await bodyOf(parsed("max", { maxOutputTokens: 4096 }, "claude-fable-5"));
+    // Even if the floor would be 40192, explicit cost-capped callers must be respected.
+    expect(b.max_tokens as number).toBe(4096);
   });
 
   test("adaptive-thinking model preserves explicit maxOutputTokens above the default ceiling", async () => {
