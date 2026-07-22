@@ -5,6 +5,7 @@ import {
   AtomicWriteSecretResidualError,
   backupConfigBeforeOpenAiTierMigration,
   OpenAiTierBackupCleanupError,
+  OpenAiTierBackupCollisionError,
   OpenAiTierBackupRollbackError,
   OpenAiTierBackupSecretResidualError,
   type OpenAiTierBackupIO,
@@ -266,6 +267,31 @@ describe("OpenAI provider option startup coordinator", () => {
     // with proper permissions, not written in-place (issue #257).
     expect(backupConfigBeforeOpenAiTierMigration("/virtual/config.json", different.io)).toBe("created");
     expect(new TextDecoder().decode(different.files.get("/virtual/config.json.pre-openai-tiers-v2.bak")!.bytes)).toBe("current");
+  });
+
+  test("backup throws collision for a differing v1 JSON backup (not silently replaced)", () => {
+    // A backup that parses as a valid pre-migration (v1) config is a legitimate rollback
+    // point. Silently replacing it could destroy the user's intended restore snapshot.
+    const v1Backup = JSON.stringify({ openaiProviderTierVersion: 1, port: 10100, defaultProvider: "openai", providers: {} });
+    const io = virtualBackupIO({
+      "/virtual/config.json": "current-config",
+      "/virtual/config.json.pre-openai-tiers-v2.bak": v1Backup,
+    });
+    expect(() => backupConfigBeforeOpenAiTierMigration("/virtual/config.json", io.io)).toThrow(OpenAiTierBackupCollisionError);
+    // The original backup must remain intact.
+    expect(new TextDecoder().decode(io.files.get("/virtual/config.json.pre-openai-tiers-v2.bak")!.bytes)).toBe(v1Backup);
+  });
+
+  test("backup replaces a differing v2 JSON backup (post-migration config was rewritten)", () => {
+    // A backup whose openaiProviderTierVersion is 2 was created from an already-migrated
+    // config, meaning ocx init or another process replaced config.json after migration.
+    const v2Backup = JSON.stringify({ openaiProviderTierVersion: 2, port: 10100, defaultProvider: "openai", providers: {} });
+    const io = virtualBackupIO({
+      "/virtual/config.json": "current-config",
+      "/virtual/config.json.pre-openai-tiers-v2.bak": v2Backup,
+    });
+    expect(backupConfigBeforeOpenAiTierMigration("/virtual/config.json", io.io)).toBe("created");
+    expect(new TextDecoder().decode(io.files.get("/virtual/config.json.pre-openai-tiers-v2.bak")!.bytes)).toBe("current-config");
   });
 
   test("an EEXIST publication race compares and reuses the winner", () => {
