@@ -34,6 +34,29 @@ export function buildInitProviders(): InitProvider[] {
   return deriveInitProviders();
 }
 
+/**
+ * Assemble the config `ocx init` saves. Keeps the baseline providers (the `openai` forward
+ * passthrough) and layers the chosen provider on top, so Codex's built-in gpt-* models keep
+ * routing through the `openai` provider even when the user picks a different default (issue #261).
+ * Returns `keptPassthrough: false` when the chosen provider IS one of the baseline defaults, since
+ * nothing extra was preserved in that case.
+ */
+export function buildInitConfig(
+  providerName: string,
+  providerConfig: OcxProviderConfig,
+  port: number,
+): { config: OcxConfig; keptPassthrough: boolean } {
+  const defaults = getDefaultConfig();
+  const keptPassthrough = !Object.hasOwn(defaults.providers, providerName);
+  const config: OcxConfig = {
+    ...defaults,
+    port,
+    providers: { ...defaults.providers, [providerName]: providerConfig },
+    defaultProvider: providerName,
+  };
+  return { config, keptPassthrough };
+}
+
 const KIND_HEADING: Record<InitKind, string> = {
   forward: "ChatGPT login",
   oauth: "Account login (OAuth — then run: ocx login <id>)",
@@ -128,16 +151,17 @@ export async function runInit(): Promise<void> {
   const portStr = await prompt.ask("\nProxy port [10100]: ");
   const port = parseInt(portStr, 10) || 10100;
 
-  const config: OcxConfig = {
-    ...getDefaultConfig(),
-    port,
-    providers: { [providerName]: providerConfig },
-    defaultProvider: providerName,
-  };
+  const { config, keptPassthrough } = buildInitConfig(providerName, providerConfig, port);
 
   saveConfig(config);
   console.log(`\n✅ Config saved to ~/.opencodex/config.json`);
   if (oauthHint) console.log(`🔐 Authenticate this provider with:  ocx login ${providerName}`);
+  // The openai passthrough stays configured so Codex's built-in gpt-* models keep working even
+  // when the default is another provider. Say so, since users often expect the default to be the
+  // only thing that routes (issue #261).
+  if (keptPassthrough && providerName !== "openai") {
+    console.log(`ℹ️  Default provider is "${providerName}". Codex's built-in gpt-* models still route through your ChatGPT login.`);
+  }
 
   const injectAnswer = await prompt.ask("Inject into Codex config.toml? [Y/n]: ");
   if (injectAnswer.trim().toLowerCase() !== "n") {
