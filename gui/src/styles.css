@@ -17,6 +17,7 @@
 @import "./styles-apikeys-workspace.css";
 @import "./styles-storage-workspace.css";
 @import "./styles-codexauth-workspace.css";
+@import "./styles-claudecode-workspace.css";
 
 :root {
   /* default: follow the OS; [data-theme] below pins color-scheme so light-dark() obeys it */
