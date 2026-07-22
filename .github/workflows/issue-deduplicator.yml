@@ -7,13 +7,15 @@ on:
       - labeled
 
 permissions:
-  contents: read
   issues: write
   models: read
 
 jobs:
   find-similar:
     name: Find similar open issues
+    concurrency:
+      group: issue-deduplicator-${{ github.event.issue.number }}
+      cancel-in-progress: false
     if: |
       github.event.action == 'opened' ||
       (github.event.action == 'labeled' && github.event.label.name == 'codex-deduplicate')
@@ -89,6 +91,14 @@ PROMPT
             const issue = context.payload.issue;
             const BOT_MARKER = "<!-- opencodex-dedup-bot -->";
 
+            // Always fetch existing bot comment first — needed for both match and no-match paths
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: issue.number, per_page: 100,
+            });
+            const existing = comments.find(
+              c => c.user?.type === 'Bot' && c.body?.includes(BOT_MARKER),
+            );
+
             const raw = process.env.AI_RESPONSE ?? '';
             let parsed;
             try {
@@ -108,17 +118,17 @@ PROMPT
             )].slice(0, 5);
 
             if (matches.length === 0) {
-              core.info('No similar issues found.');
+              // Clean up a stale duplicate comment from a prior run if present
+              if (existing) {
+                await github.rest.issues.deleteComment({
+                  owner, repo, comment_id: existing.id,
+                });
+                core.info(`Removed stale dedup comment on #${issue.number} — no matches on rescan.`);
+              } else {
+                core.info('No similar issues found.');
+              }
               return;
             }
-
-            // Upsert: update existing bot comment if present
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: issue.number, per_page: 100,
-            });
-            const existing = comments.find(
-              c => c.user?.type === 'Bot' && c.body?.includes(BOT_MARKER),
-            );
 
             const list = matches.map(n => `- #${n}`).join('\n');
             const body = [
@@ -147,4 +157,9 @@ PROMPT
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue edit "${{ github.event.issue.number }}" --remove-label "codex-deduplicate" || true
+          # Only swallow 404 "label not found"; propagate auth/API/runner failures
+          output=$(gh issue edit "${{ github.event.issue.number }}" --remove-label "codex-deduplicate" 2>&1) && exit 0 || {
+            echo "$output" | grep -qi "could not remove label\|label.*not found\|Label.*not exist" && exit 0
+            echo "$output" >&2
+            exit 1
+          }
