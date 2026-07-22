@@ -5,20 +5,20 @@ on:
     types:
       - opened
 
-permissions:
-  issues: write
-  models: read
-
 jobs:
-  translate:
-    name: Translate non-English issue
+  detect-and-translate:
+    name: Detect language and translate
     concurrency:
       group: issue-translator-${{ github.event.issue.number }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
+    permissions:
+      models: read   # inference only — no write access during attacker-controlled input
+    outputs:
+      response: ${{ steps.ai.outputs.response }}
 
     steps:
-      - name: Detect language and translate
+      - name: Run inference
         id: ai
         uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
         with:
@@ -58,10 +58,18 @@ jobs:
               "translated_body": "<English body or empty string>"
             }
 
-      - name: Apply translation
+  apply-translation:
+    name: Apply translation
+    needs: detect-and-translate
+    if: needs.detect-and-translate.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write  # write access only after inference is complete
+    steps:
+      - name: Update issue with translation
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
-          AI_RESPONSE: ${{ steps.ai.outputs.response }}
+          AI_RESPONSE: ${{ needs.detect-and-translate.outputs.response }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -81,7 +89,8 @@ jobs:
                 parsed = JSON.parse(stripped);
               }
             } catch (err) {
-              core.warning(`AI response was not valid JSON: ${raw}`);
+              // Log only metadata — never echo raw content which may include secrets or PII
+              core.warning(`AI response could not be parsed as JSON (response length: ${raw.length})`);
               return;
             }
 
@@ -114,7 +123,7 @@ jobs:
               core.info('Title was already edited after the event; skipping title update.');
             } else if (liveIssue.title !== title) {
               await github.rest.issues.update({ owner, repo, issue_number, title });
-              core.info(`Title updated to: ${title}`);
+              core.info('Title updated to English translation.');
             }
 
             if (!body) {
@@ -142,4 +151,4 @@ jobs:
                 body,
               ].join('\n'),
             });
-            core.info(`Posted ${lang} → English translation on #${issue_number}.`);
+            core.info(`Posted ${lang} to English translation on #${issue_number}.`);
