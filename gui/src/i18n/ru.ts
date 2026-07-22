@@ -511,6 +511,8 @@ export const ru: Record<TKey, string> = {
   "storage.bucket.attachments": "Вложения",
   "storage.bucket.deletion_manifests": "Манифесты удаления",
   "storage.bucket.other": "Прочее",
+  "storage.workspace.overview": "Обзор",
+  "storage.workspace.selectBucket": "Выберите бакет из списка, чтобы увидеть его разбивку.",
 
   // add-provider modal
   "modal.addNamed": "Добавить: {label}",

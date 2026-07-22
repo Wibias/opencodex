@@ -1,48 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { useI18n, type TFn, type TKey, type Locale } from "../i18n/shared";
+import { useI18n, type TFn, type Locale } from "../i18n/shared";
 import { EmptyState } from "../ui";
 import { IconRefresh } from "../icons";
 import { formatBytes } from "../format-bytes";
-
-interface StorageLargestEntry {
-  path: string;
-  bytes: number;
-}
-
-interface StorageBucket {
-  key: string;
-  label: string;
-  bytes: number;
-  fileCount: number;
-  oldest?: number;
-  newest?: number;
-  largest?: StorageLargestEntry[];
-  rows?: number | null;
-}
-
-interface StorageReport {
-  codexHome: string;
-  generatedAt: number;
-  total: { bytes: number; fileCount: number };
-  buckets: StorageBucket[];
-  error?: string;
-}
-
-// Known scanner bucket keys → localized labels; unknown future keys fall back to the API label.
-const BUCKET_TKEYS: Record<string, TKey> = {
-  sessions: "storage.bucket.sessions",
-  archived_sessions: "storage.bucket.archived_sessions",
-  logs_db: "storage.bucket.logs_db",
-  state_db: "storage.bucket.state_db",
-  attachments: "storage.bucket.attachments",
-  deletion_manifests: "storage.bucket.deletion_manifests",
-  other: "storage.bucket.other",
-};
-
-function bucketLabel(bucket: StorageBucket, t: TFn): string {
-  const tkey = BUCKET_TKEYS[bucket.key];
-  return tkey ? t(tkey) : bucket.label;
-}
+import StorageWorkspace, {
+  bucketLabel,
+  type StorageBucket,
+  type StorageReport,
+} from "../components/storage-workspace/StorageWorkspace";
 
 function formatDate(ms: number | undefined, locale: Locale): string {
   return ms === undefined ? "—" : new Date(ms).toLocaleDateString(locale);
@@ -115,6 +80,23 @@ export default function Storage({ apiBase }: { apiBase: string }) {
   const { t, locale } = useI18n();
   const [data, setData] = useState<StorageReport | null>(null);
   const [loading, setLoading] = useState(true);
+  // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
+  const [workspaceView, setWorkspaceView] = useState(() => {
+    try {
+      return localStorage.getItem("ocx-storage-view") === "workspace";
+    } catch {
+      return false;
+    }
+  });
+  const toggleWorkspace = () => {
+    const next = !workspaceView;
+    try {
+      localStorage.setItem("ocx-storage-view", next ? "workspace" : "classic");
+    } catch {
+      /* ignore */
+    }
+    setWorkspaceView(next);
+  };
 
   const fetchStorage = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -147,13 +129,33 @@ export default function Storage({ apiBase }: { apiBase: string }) {
   const failed = !loading && (!data || data.error !== undefined);
   const empty = !loading && !failed && data!.total.fileCount === 0;
 
+  if (workspaceView && !loading && !failed && !empty && data) {
+    return (
+      <>
+        <div className="page-head">
+          <h2 id="storage-page-title">{t("storage.title")}</h2>
+          <div className="row">
+            <button type="button" className="btn btn-ghost btn-sm" disabled={loading} onClick={() => void fetchStorage()}>
+              <IconRefresh /> {t("storage.refresh")}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.classicToggle")}</button>
+          </div>
+        </div>
+        <StorageWorkspace report={data} locale={locale} />
+      </>
+    );
+  }
+
   return (
     <>
       <div className="page-head">
         <h2 id="storage-page-title">{t("storage.title")}</h2>
-        <button type="button" className="btn btn-ghost btn-sm" disabled={loading} onClick={() => void fetchStorage()}>
-          <IconRefresh /> {t("storage.refresh")}
-        </button>
+        <div className="row">
+          <button type="button" className="btn btn-ghost btn-sm" disabled={loading} onClick={() => void fetchStorage()}>
+            <IconRefresh /> {t("storage.refresh")}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>{t("pws.workspaceToggle")}</button>
+        </div>
       </div>
       <p className="page-sub">{t("storage.subtitle")}</p>
 

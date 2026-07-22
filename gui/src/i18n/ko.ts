@@ -717,6 +717,8 @@ export const ko: Record<TKey, string> = {
   "storage.bucket.attachments": "첨부 파일",
   "storage.bucket.deletion_manifests": "삭제 매니페스트",
   "storage.bucket.other": "기타",
+  "storage.workspace.overview": "개요",
+  "storage.workspace.selectBucket": "목록에서 버킷을 선택하면 내역이 표시됩니다.",
   "modal.back": "뒤로",
   "modal.badge.oauth": "OAuth",
   "modal.customProvider": "사용자 지정 프로바이더",

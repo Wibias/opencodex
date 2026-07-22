@@ -476,6 +476,8 @@ export const ja: Record<TKey, string> = {
   "storage.bucket.attachments": "添付",
   "storage.bucket.deletion_manifests": "削除マニフェスト",
   "storage.bucket.other": "その他",
+  "storage.workspace.overview": "概要",
+  "storage.workspace.selectBucket": "一覧からバケットを選択すると、内訳が表示されます。",
 
   // add-provider modal
   "modal.addNamed": "追加: {label}",

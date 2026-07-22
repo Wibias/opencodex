@@ -697,6 +697,8 @@ export const de = {
   "storage.bucket.attachments": "Anhänge",
   "storage.bucket.deletion_manifests": "Lösch-Manifeste",
   "storage.bucket.other": "Sonstiges",
+  "storage.workspace.overview": "Übersicht",
+  "storage.workspace.selectBucket": "Wählen Sie einen Bucket aus der Liste, um die Aufschlüsselung zu sehen.",
   "modal.back": "Zurück",
   "modal.badge.oauth": "OAuth",
   "modal.customProvider": "Benutzerdefinierter Anbieter",

@@ -717,6 +717,8 @@ export const zh: Record<TKey, string> = {
   "storage.bucket.attachments": "附件",
   "storage.bucket.deletion_manifests": "删除清单",
   "storage.bucket.other": "其他",
+  "storage.workspace.overview": "概览",
+  "storage.workspace.selectBucket": "从列表中选择一个存储桶以查看其明细。",
   "modal.back": "返回",
   "modal.badge.oauth": "OAuth",
   "modal.customProvider": "自定义提供方",

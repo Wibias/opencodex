@@ -511,6 +511,8 @@ export const en = {
   "storage.bucket.attachments": "Attachments",
   "storage.bucket.deletion_manifests": "Deletion manifests",
   "storage.bucket.other": "Other",
+  "storage.workspace.overview": "Overview",
+  "storage.workspace.selectBucket": "Select a bucket from the list to see its breakdown.",
 
   // add-provider modal
   "modal.addNamed": "Add: {label}",
