@@ -16,6 +16,9 @@ export const ko: Record<TKey, string> = {
   "common.discard": "버리기",
   "common.remove": "삭제",
   "common.loading": "불러오는 중…",
+  "common.yes": "예",
+  "common.no": "아니요",
+  "common.off": "끔",
   "theme.label": "테마",
   "theme.light": "라이트",
   "theme.dark": "다크",
@@ -596,6 +599,11 @@ export const ko: Record<TKey, string> = {
   "codexAuth.creditNextBadge": "NEXT",
   "codexAuth.creditGranted": "획득 {date}",
   "codexAuth.creditExpires": "만료 {date} ({days}일 남음)",
+  "codexAuth.workspace.selectHint": "목록에서 계정을 선택하여 관리하세요.",
+  "codexAuth.workspace.poolAccounts": "풀 계정",
+  "codexAuth.workspace.accountDetails": "계정 세부 정보",
+  "codexAuth.email": "이메일",
+  "codexAuth.plan": "플랜",
 
   // api access page
   "api.title": "API 액세스",

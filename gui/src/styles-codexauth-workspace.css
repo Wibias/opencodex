@@ -1,0 +1,278 @@
+/* ============================================================================
+   codexauth-workspace — isolated stylesheet (mirrors providers-workspace layout DNA)
+   Namespace: codexauth-workspace-  |  widgets: caw-
+   Uses only design tokens from styles.css. No gradients.
+   ============================================================================ */
+
+.main-inner:has(.codexauth-workspace-shell) {
+  max-width: 1200px;
+}
+
+.codexauth-workspace-shell {
+  width: 100%;
+  min-width: 0;
+}
+
+.codexauth-workspace-root {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 100%;
+  min-height: 480px;
+}
+
+/* ── Rail ─────────────────────────────────────────────── */
+
+.codexauth-workspace-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-right: 1px solid var(--border);
+  padding-right: var(--space-3);
+  min-width: 0;
+}
+
+.codexauth-workspace-rail-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.codexauth-workspace-rail-title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.codexauth-workspace-rail-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.codexauth-workspace-rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  max-height: 560px;
+  min-height: 0;
+}
+
+.codexauth-workspace-rail-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  width: 100%;
+  min-height: 46px;
+  appearance: none;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1-5) var(--space-2);
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  overflow: hidden;
+}
+
+.codexauth-workspace-rail-row:hover {
+  background: var(--surface-2);
+}
+
+.codexauth-workspace-rail-row--selected {
+  background: var(--surface-2);
+  outline: 1px solid var(--border);
+}
+
+.codexauth-workspace-rail-name {
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.codexauth-workspace-rail-meta {
+  font-size: var(--text-caption);
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.codexauth-workspace-rail-empty {
+  font-size: var(--text-caption);
+  color: var(--faint);
+  padding: var(--space-2);
+}
+
+.codexauth-workspace-rail-section {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-1) var(--space-2) 0;
+}
+
+.codexauth-workspace-rail-badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+/* ── Main pane ────────────────────────────────────────── */
+
+.codexauth-workspace-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.caw-hint {
+  font-size: var(--text-caption);
+  color: var(--faint);
+  padding: var(--space-1) 0;
+}
+
+.caw-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.caw-detail-title {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  margin: 0;
+}
+
+.caw-detail-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.caw-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.caw-section-title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  margin: 0;
+}
+
+.caw-kv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.caw-kv-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.caw-kv-row dt {
+  font-size: var(--text-caption);
+  color: var(--faint);
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.caw-kv-row dd {
+  font-size: var(--text-body);
+  color: var(--text);
+  margin: 0;
+  word-break: break-all;
+}
+
+.caw-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+
+.caw-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.caw-stat-value {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.caw-stat-label {
+  font-size: var(--text-caption);
+  color: var(--faint);
+}
+
+.caw-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.caw-toggle-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.caw-toggle-title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+.caw-toggle-desc {
+  font-size: var(--text-caption);
+  color: var(--faint);
+}
+
+/* ── Responsive ───────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .codexauth-workspace-root {
+    grid-template-columns: 1fr;
+  }
+
+  .codexauth-workspace-rail {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding-right: 0;
+    padding-bottom: var(--space-3);
+  }
+
+  .codexauth-workspace-rail-list {
+    max-height: 240px;
+  }
+}

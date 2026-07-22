@@ -16,6 +16,9 @@ export const zh: Record<TKey, string> = {
   "common.discard": "丢弃",
   "common.remove": "移除",
   "common.loading": "加载中…",
+  "common.yes": "是",
+  "common.no": "否",
+  "common.off": "关",
   "theme.label": "主题",
   "theme.light": "浅色",
   "theme.dark": "深色",
@@ -596,6 +599,11 @@ export const zh: Record<TKey, string> = {
   "codexAuth.creditNextBadge": "NEXT",
   "codexAuth.creditGranted": "获得 {date}",
   "codexAuth.creditExpires": "过期 {date}（剩余 {days} 天）",
+  "codexAuth.workspace.selectHint": "从列表中选择一个账号进行管理。",
+  "codexAuth.workspace.poolAccounts": "池账号",
+  "codexAuth.workspace.accountDetails": "账号详情",
+  "codexAuth.email": "邮箱",
+  "codexAuth.plan": "套餐",
 
   // api access page
   "api.title": "API 访问",

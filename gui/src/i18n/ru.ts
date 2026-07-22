@@ -18,6 +18,9 @@ export const ru: Record<TKey, string> = {
   "common.ok": "ОК",
   "common.remove": "Удалить",
   "common.loading": "Загрузка…",
+  "common.yes": "Да",
+  "common.no": "Нет",
+  "common.off": "Выкл",
   "app.logoAria": "Логотип opencodex",
   "app.claudeOn": "Claude ВКЛ",
   "app.claudeOff": "Claude ВЫКЛ",
@@ -881,6 +884,11 @@ export const ru: Record<TKey, string> = {
   "codexAuth.creditNextBadge": "СЛЕД.",
   "codexAuth.creditGranted": "Начислен {date}",
   "codexAuth.creditExpires": "Истекает {date} (осталось {days} дн.)",
+  "codexAuth.workspace.selectHint": "Выберите аккаунт из списка, чтобы управлять им.",
+  "codexAuth.workspace.poolAccounts": "Аккаунты пула",
+  "codexAuth.workspace.accountDetails": "Данные аккаунта",
+  "codexAuth.email": "Эл. почта",
+  "codexAuth.plan": "Тариф",
 
   // api access page
   "api.title": "Доступ по API",

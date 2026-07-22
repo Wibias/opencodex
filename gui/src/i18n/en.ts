@@ -18,6 +18,9 @@ export const en = {
   "common.ok": "OK",
   "common.remove": "Remove",
   "common.loading": "Loading…",
+  "common.yes": "Yes",
+  "common.no": "No",
+  "common.off": "Off",
   "app.logoAria": "opencodex logo",
   "app.claudeOn": "Claude ON",
   "app.claudeOff": "Claude OFF",
@@ -881,6 +884,11 @@ export const en = {
   "codexAuth.creditNextBadge": "NEXT",
   "codexAuth.creditGranted": "Granted {date}",
   "codexAuth.creditExpires": "Expires {date} ({days}d left)",
+  "codexAuth.workspace.selectHint": "Select an account from the list to manage it.",
+  "codexAuth.workspace.poolAccounts": "Pool accounts",
+  "codexAuth.workspace.accountDetails": "Account details",
+  "codexAuth.email": "Email",
+  "codexAuth.plan": "Plan",
 
   // api access page
   "api.title": "API Access",

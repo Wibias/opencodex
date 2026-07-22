@@ -11,6 +11,24 @@ import { codexAccountModeState, type CodexAccountModeState } from "../codex-mult
 export default function CodexAuth({ apiBase }: { apiBase: string }) {
   const t = useT();
   const [accountModeState, setAccountModeState] = useState<CodexAccountModeState | null>(null);
+  // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
+  const [workspaceView, setWorkspaceView] = useState(() => {
+    try {
+      return localStorage.getItem("ocx-codexauth-view") === "workspace";
+    } catch {
+      return false;
+    }
+  });
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const toggleWorkspace = () => {
+    const next = !workspaceView;
+    try {
+      localStorage.setItem("ocx-codexauth-view", next ? "workspace" : "classic");
+    } catch {
+      /* ignore */
+    }
+    setWorkspaceView(next);
+  };
 
   const loadMode = useCallback(async () => {
     try {
@@ -53,5 +71,15 @@ export default function CodexAuth({ apiBase }: { apiBase: string }) {
     </div>
   );
 
-  return <CodexAccountPool apiBase={apiBase} accountModeState={accountModeState} banner={banner} />;
+  return (
+    <CodexAccountPool
+      apiBase={apiBase}
+      accountModeState={accountModeState}
+      banner={banner}
+      workspaceView={workspaceView}
+      selectedAccountId={selectedAccountId}
+      onSelectAccount={setSelectedAccountId}
+      onToggleWorkspace={toggleWorkspace}
+    />
+  );
 }

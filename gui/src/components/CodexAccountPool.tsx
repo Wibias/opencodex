@@ -21,11 +21,15 @@ export interface CodexAccountEntry {
  * (the Codex Auth page passes its mode banner); `embedded` (WP090) omits page
  * chrome — currently a no-op stub reserved for the Providers workspace.
  */
-export default function CodexAccountPool({ apiBase, accountModeState = null, banner = null, embedded = false, onActiveNeedsReauthChange }: {
+export default function CodexAccountPool({ apiBase, accountModeState = null, banner = null, embedded = false, workspaceView = false, selectedAccountId = null, onSelectAccount, onToggleWorkspace, onActiveNeedsReauthChange }: {
   apiBase: string;
   accountModeState?: CodexAccountModeState | null;
   banner?: ReactNode;
   embedded?: boolean;
+  workspaceView?: boolean;
+  selectedAccountId?: string | null;
+  onSelectAccount?: (id: string | null) => void;
+  onToggleWorkspace?: () => void;
   onActiveNeedsReauthChange?: (needs: boolean) => void;
 }) {
   const t = useT();
@@ -264,14 +268,332 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
   };
   const switchActionLabel = t(accountModeState === "direct" ? "codexAuth.prepareForPool" : "codexAuth.setAsNext");
 
+  // Shared modal layer — rendered identically in both classic and workspace views.
+  const modals = (
+    <>
+      {confirm && (
+        <div className="modal-overlay" onClick={() => setConfirm(null)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <h3>{accountModeState === "direct"
+              ? t("codexAuth.preparePoolTitle")
+              : confirm.id === "__main__" ? t("codexAuth.switchBack") : t("codexAuth.switchTitle")}</h3>
+            <p className="modal-desc">
+              {accountModeState === "direct"
+                ? t("codexAuth.preparePoolDesc")
+                : confirm.id === "__main__" ? t("codexAuth.switchBackDesc") : t("codexAuth.switchDesc")}
+            </p>
+            <div className="card" style={{ margin: "12px 0" }}>
+              <strong>{confirm.id === "__main__" ? main?.email : confirm.email}</strong>
+              {confirm.plan && <span className="badge badge-green" style={{ marginLeft: 8 }}>{confirm.plan}</span>}
+            </div>
+            {confirm.id !== "__main__" && (
+              <div className="notice-warn"><IconAlert width={14} /> {t("codexAuth.cacheWarning")}</div>
+            )}
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setConfirm(null)}>{t("codexAuth.cancel")}</button>
+              <button className="btn btn-primary" disabled={Boolean(switchingId)} onClick={() => setActive(confirm.id === "__main__" ? "__main__" : confirm.id)}>
+                {switchingId ? t("pws.accountSwitching") : t(accountModeState === "direct" ? "codexAuth.prepareForPool" : "codexAuth.setAsNext")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resetPopup && (
+        <div className="modal-overlay" onClick={() => { setResetPopup(null); setResetConfirm(false); setCreditDetails(null); }}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            {!resetConfirm ? (
+              <>
+                <h3><IconTicket width={16} /> {t("codexAuth.resetCreditsTitle")}</h3>
+                <div className="card-sub">{resetPopup.email}{resetPopup.plan ? ` · ${resetPopup.plan}` : ""}</div>
+                <div style={{ margin: "16px 0" }}>
+                  {(resetPopup.quota?.resetCredits ?? 0) > 0 ? (
+                    <>
+                      <p style={{ marginBottom: 12 }}>{t("codexAuth.resetCreditsAvailable", { count: String(resetPopup.quota?.resetCredits ?? 0) })}</p>
+                      {creditDetailsLoading && <p className="faint text-label">{t("common.loading")}</p>}
+                      {creditDetails && creditDetails.length > 0 && (
+                        <div className="credit-list">
+                          {creditDetails.map((c, i) => (
+                            <CreditItem key={i} index={i} grantedAt={c.granted_at} expiresAt={c.expires_at} isNext={i === 0} t={t} />
+                          ))}
+                        </div>
+                      )}
+                      <button className="btn btn-primary" style={{ marginTop: 12, width: "100%" }}
+                        onClick={() => setResetConfirm(true)} disabled={redeeming}>
+                        {t("codexAuth.useOneCredit")}
+                      </button>
+                      <p className="card-sub text-caption" style={{ marginTop: 8, textAlign: "center" }}>{t("codexAuth.fifoNote")}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="faint">{t("codexAuth.noResetCredits")}</p>
+                      <p className="modal-desc">{t("codexAuth.earnCreditsHint")}</p>
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ textAlign: "center", padding: "12px 0" }}>
+                  <div className="confirm-icon"><IconAlert width={22} /></div>
+                  <h3>{t("codexAuth.confirmResetTitle")}</h3>
+                  <p className="modal-desc">{t("codexAuth.confirmResetDesc", { count: String(resetPopup.quota?.resetCredits ?? 0) })}</p>
+                  {creditDetails && creditDetails[0] && (
+                    <p className="faint text-label">
+                      {t("codexAuth.confirmWhichCredit", { date: formatCreditDate(creditDetails[0].granted_at) })}
+                    </p>
+                  )}
+                  <p className="faint text-label">{t("codexAuth.irreversible")}</p>
+                </div>
+                <div className="modal-actions">
+                  <button className="btn btn-ghost" onClick={() => setResetConfirm(false)}>{t("codexAuth.cancel")}</button>
+                  <button className="btn btn-primary" onClick={() => handleRedeem(resetPopup.id)} disabled={redeeming}>
+                    {redeeming ? t("codexAuth.redeeming") : t("codexAuth.useCredit")}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showAdd && (
+        <AddCodexAccountModal
+          apiBase={apiBase}
+          reauthAccountId={reauthId ?? undefined}
+          onClose={closeAddModal}
+          onAdded={handleAccountAdded}
+        />
+      )}
+    </>
+  );
+
+  // ── Workspace view: rail (accounts) + main (overview / detail) ──────────
+  if (workspaceView) {
+    const selected = selectedAccountId === "__main__"
+      ? mainSwitchEntry
+      : pool.find(a => a.id === selectedAccountId) ?? null;
+    const select = (id: string | null) => onSelectAccount?.(id);
+
+    const railRow = (entry: CodexAccountEntry, id: string) => {
+      const isSel = selectedAccountId === id;
+      const active = id === "__main__" ? isMainActive : isNext(entry.id);
+      return (
+        <button
+          key={id}
+          type="button"
+          className={`codexauth-workspace-rail-row${isSel ? " codexauth-workspace-rail-row--selected" : ""}`}
+          onClick={() => select(id)}
+          aria-current={isSel ? "true" : undefined}
+        >
+          <span className="codexauth-workspace-rail-name">{entry.alias ?? entry.email}</span>
+          <span className="codexauth-workspace-rail-meta">
+            {entry.email}{entry.plan ? ` · ${entry.plan}` : ""}
+          </span>
+          <span className="codexauth-workspace-rail-badges">
+            <span className={`dot ${entry.needsReauth ? "dot-amber" : active ? "dot-green" : "dot-muted"}`} />
+            {entry.needsReauth && <span className="badge badge-amber">{t("codexAuth.needsReauth")}</span>}
+            {active && !entry.needsReauth && (
+              <span className="badge badge-primary">
+                {t(accountModeState === "direct" ? "codexAuth.poolPrepared" : "codexAuth.nextSession")}
+              </span>
+            )}
+          </span>
+        </button>
+      );
+    };
+
+    return (
+      <div className="codexauth-workspace-shell">
+        {!embedded && (
+          <div className="page-head">
+            <h2 className="page-title">{t("nav.codexAuth")}</h2>
+            <div className="row">
+              <button className="btn btn-sm btn-ghost" onClick={refreshQuotas} disabled={refreshingQuota}>
+                <IconRefresh width={14} /> {refreshingQuota ? t("codexAuth.refreshingQuota") : t("codexAuth.refreshQuota")}
+              </button>
+              {onToggleWorkspace && (
+                <button className="btn btn-sm btn-ghost" onClick={onToggleWorkspace}>{t("pws.classicToggle")}</button>
+              )}
+            </div>
+          </div>
+        )}
+        {toast && <Notice tone={toastError ? "err" : "ok"}>{toast}</Notice>}
+        {loadState === "loading" && accounts.length === 0 && (
+          <div className="pwi-auth-state" role="status">{t("pws.accountsLoading")}</div>
+        )}
+        {loadState === "error" && (
+          <div className="pwi-auth-state pwi-auth-state--error" role="alert">
+            <span>{t("codexAuth.loadFailed")}</span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>{t("pws.retryAccounts")}</button>
+          </div>
+        )}
+
+        <div className="codexauth-workspace-root">
+          <aside className="codexauth-workspace-rail" aria-label={t("nav.codexAuth")}>
+            <div className="codexauth-workspace-rail-header">
+              <span className="codexauth-workspace-rail-title">{t("codexAuth.accountPool")}</span>
+              <span className="codexauth-workspace-rail-count">{accounts.length}</span>
+            </div>
+            <div className="codexauth-workspace-rail-list">
+              {main && railRow(mainSwitchEntry, "__main__")}
+              {pool.length > 0 && (
+                <span className="codexauth-workspace-rail-section">{t("codexAuth.accountPool")}</span>
+              )}
+              {pool.map(a => railRow(a, a.id))}
+              {pool.length === 0 && (
+                <span className="codexauth-workspace-rail-empty">{t("codexAuth.noPool")}</span>
+              )}
+            </div>
+            <button className="btn btn-sm btn-ghost" onClick={() => setShowAdd(true)}>
+              <IconPlus width={14} /> {t("codexAuth.add")}
+            </button>
+          </aside>
+
+          <main className="codexauth-workspace-main">
+            {selected ? (
+              <div className="caw-detail">
+                <div className="caw-detail-head">
+                  <h2 className="caw-detail-title">{selected.alias ?? selected.email}</h2>
+                  <span className="caw-detail-actions">
+                    {selected.id !== "__main__" && (
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => void editAlias(selected)}>
+                        {t("prov.editAlias")}
+                      </button>
+                    )}
+                    {selected.needsReauth ? (
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => openReauth(selected.id === "__main__" ? (main?.id ?? "") : selected.id)}>
+                        {t("codexAuth.reauthenticate")}
+                      </button>
+                    ) : (
+                      !(selected.id === "__main__" ? isMainActive : isNext(selected.id)) && (
+                        <button type="button" className="btn btn-primary btn-sm" onClick={() => setConfirm(selected)}>
+                          {switchActionLabel}
+                        </button>
+                      )
+                    )}
+                    {selected.id !== "__main__" && (
+                      <button
+                        type="button"
+                        className="btn-icon btn-icon-danger"
+                        aria-label={`${t("common.remove")} — ${selected.email}`}
+                        title={`${t("common.remove")} — ${selected.email}`}
+                        onClick={() => void remove(selected.id)}
+                      >
+                        <IconX width={14} />
+                      </button>
+                    )}
+                  </span>
+                </div>
+
+                <div className="caw-section">
+                  <h3 className="caw-section-title">{t("codexAuth.workspace.accountDetails")}</h3>
+                  <dl className="caw-kv">
+                    <div className="caw-kv-row">
+                      <dt>{t("codexAuth.mainAccount")}</dt>
+                      <dd>{selected.id === "__main__" ? t("common.yes") : t("common.no")}</dd>
+                    </div>
+                    <div className="caw-kv-row">
+                      <dt>{t("codexAuth.email")}</dt>
+                      <dd>{selected.email}</dd>
+                    </div>
+                    {selected.plan && (
+                      <div className="caw-kv-row">
+                        <dt>{t("codexAuth.plan")}</dt>
+                        <dd>{selected.plan}</dd>
+                      </div>
+                    )}
+                    {selected.id !== "__main__" && (
+                      <div className="caw-kv-row">
+                        <dt>{t("prov.accountId")}</dt>
+                        <dd><code>{selected.id}</code></dd>
+                      </div>
+                    )}
+                  </dl>
+                </div>
+
+                {selected.needsReauth ? (
+                  <div className="notice-warn">
+                    <IconAlert width={14} /> {selected.id === "__main__" ? t("codexAuth.mainTokenExpired") : t("codexAuth.tokenExpired")}
+                  </div>
+                ) : selected.quota ? (
+                  <div className="caw-section">
+                    <h3 className="caw-section-title">{t("usage.title")}</h3>
+                    <QuotaBars quota={selected.quota} plan={selected.plan} threshold={autoThreshold} t={t} />
+                    <div className="caw-detail-actions">
+                      <button className="btn btn-sm btn-ghost" onClick={refreshQuotas} disabled={refreshingQuota}>
+                        <IconRefresh width={14} /> {refreshingQuota ? t("codexAuth.refreshingQuota") : t("codexAuth.refreshQuota")}
+                      </button>
+                      <TicketBadge t={t} account={selected} onClick={() => openResetPopup(selected)} />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                {accounts.length > 0 && (
+                  <div className="caw-hint">{t("codexAuth.workspace.selectHint")}</div>
+                )}
+
+                {banner}
+
+                <div className="caw-overview-grid">
+                  <div className="caw-stat">
+                    <span className="caw-stat-value">{accounts.length}</span>
+                    <span className="caw-stat-label">{t("codexAuth.accountPool")}</span>
+                  </div>
+                  <div className="caw-stat">
+                    <span className="caw-stat-value">{pool.length}</span>
+                    <span className="caw-stat-label">{t("codexAuth.workspace.poolAccounts")}</span>
+                  </div>
+                  <div className="caw-stat">
+                    <span className="caw-stat-value">{autoThreshold > 0 ? `${autoThreshold}%` : t("common.off")}</span>
+                    <span className="caw-stat-label">{t("codexAuth.autoSwitch")}</span>
+                  </div>
+                </div>
+
+                <div className="caw-toggle-row">
+                  <div className="caw-toggle-copy">
+                    <span className="caw-toggle-title">{t("codexAuth.autoSwitch")}</span>
+                    <span className="caw-toggle-desc">{t("codexAuth.autoSwitchDesc")}</span>
+                  </div>
+                  <button className={`toggle ${autoThreshold > 0 ? "on" : ""}`} onClick={toggleAuto}
+                    aria-pressed={autoThreshold > 0} aria-label={t("codexAuth.autoSwitch")} title={t("codexAuth.autoSwitch")}>
+                    <span className="toggle-knob" />
+                  </button>
+                </div>
+
+                <div className="caw-detail-actions">
+                  <button className="btn btn-sm btn-ghost" onClick={refreshQuotas} disabled={refreshingQuota}>
+                    <IconRefresh width={14} /> {refreshingQuota ? t("codexAuth.refreshingQuota") : t("codexAuth.refreshQuota")}
+                  </button>
+                  <button className="btn btn-sm btn-ghost" onClick={() => setShowAdd(true)}>
+                    <IconPlus width={14} /> {t("codexAuth.add")}
+                  </button>
+                </div>
+              </>
+            )}
+          </main>
+        </div>
+
+        {modals}
+      </div>
+    );
+  }
+
   return (
     <div>
       {!embedded && (
         <div className="page-head">
           <h2 className="page-title">{t("nav.codexAuth")}</h2>
-          <button className="btn btn-sm btn-ghost" onClick={refreshQuotas} disabled={refreshingQuota}>
-            <IconRefresh width={14} /> {refreshingQuota ? t("codexAuth.refreshingQuota") : t("codexAuth.refreshQuota")}
-          </button>
+          <div className="row">
+            <button className="btn btn-sm btn-ghost" onClick={refreshQuotas} disabled={refreshingQuota}>
+              <IconRefresh width={14} /> {refreshingQuota ? t("codexAuth.refreshingQuota") : t("codexAuth.refreshQuota")}
+            </button>
+            {onToggleWorkspace && (
+              <button className="btn btn-sm btn-ghost" onClick={onToggleWorkspace}>{t("pws.workspaceToggle")}</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -389,100 +711,7 @@ export default function CodexAccountPool({ apiBase, accountModeState = null, ban
         </button>
       </div>
 
-      {confirm && (
-        <div className="modal-overlay" onClick={() => setConfirm(null)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <h3>{accountModeState === "direct"
-              ? t("codexAuth.preparePoolTitle")
-              : confirm.id === "__main__" ? t("codexAuth.switchBack") : t("codexAuth.switchTitle")}</h3>
-            <p className="modal-desc">
-              {accountModeState === "direct"
-                ? t("codexAuth.preparePoolDesc")
-                : confirm.id === "__main__" ? t("codexAuth.switchBackDesc") : t("codexAuth.switchDesc")}
-            </p>
-            <div className="card" style={{ margin: "12px 0" }}>
-              <strong>{confirm.id === "__main__" ? main?.email : confirm.email}</strong>
-              {confirm.plan && <span className="badge badge-green" style={{ marginLeft: 8 }}>{confirm.plan}</span>}
-            </div>
-            {confirm.id !== "__main__" && (
-              <div className="notice-warn"><IconAlert width={14} /> {t("codexAuth.cacheWarning")}</div>
-            )}
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setConfirm(null)}>{t("codexAuth.cancel")}</button>
-              <button className="btn btn-primary" disabled={Boolean(switchingId)} onClick={() => setActive(confirm.id === "__main__" ? "__main__" : confirm.id)}>
-                {switchingId ? t("pws.accountSwitching") : t(accountModeState === "direct" ? "codexAuth.prepareForPool" : "codexAuth.setAsNext")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {resetPopup && (
-        <div className="modal-overlay" onClick={() => { setResetPopup(null); setResetConfirm(false); setCreditDetails(null); }}>
-          <div className="modal-card" onClick={e => e.stopPropagation()}>
-            {!resetConfirm ? (
-              <>
-                <h3><IconTicket width={16} /> {t("codexAuth.resetCreditsTitle")}</h3>
-                <div className="card-sub">{resetPopup.email}{resetPopup.plan ? ` · ${resetPopup.plan}` : ""}</div>
-                <div style={{ margin: "16px 0" }}>
-                  {(resetPopup.quota?.resetCredits ?? 0) > 0 ? (
-                    <>
-                      <p style={{ marginBottom: 12 }}>{t("codexAuth.resetCreditsAvailable", { count: String(resetPopup.quota?.resetCredits ?? 0) })}</p>
-                      {creditDetailsLoading && <p className="faint text-label">{t("common.loading")}</p>}
-                      {creditDetails && creditDetails.length > 0 && (
-                        <div className="credit-list">
-                          {creditDetails.map((c, i) => (
-                            <CreditItem key={i} index={i} grantedAt={c.granted_at} expiresAt={c.expires_at} isNext={i === 0} t={t} />
-                          ))}
-                        </div>
-                      )}
-                      <button className="btn btn-primary" style={{ marginTop: 12, width: "100%" }}
-                        onClick={() => setResetConfirm(true)} disabled={redeeming}>
-                        {t("codexAuth.useOneCredit")}
-                      </button>
-                      <p className="card-sub text-caption" style={{ marginTop: 8, textAlign: "center" }}>{t("codexAuth.fifoNote")}</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="faint">{t("codexAuth.noResetCredits")}</p>
-                      <p className="modal-desc">{t("codexAuth.earnCreditsHint")}</p>
-                    </>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ textAlign: "center", padding: "12px 0" }}>
-                  <div className="confirm-icon"><IconAlert width={22} /></div>
-                  <h3>{t("codexAuth.confirmResetTitle")}</h3>
-                  <p className="modal-desc">{t("codexAuth.confirmResetDesc", { count: String(resetPopup.quota?.resetCredits ?? 0) })}</p>
-                  {creditDetails && creditDetails[0] && (
-                    <p className="faint text-label">
-                      {t("codexAuth.confirmWhichCredit", { date: formatCreditDate(creditDetails[0].granted_at) })}
-                    </p>
-                  )}
-                  <p className="faint text-label">{t("codexAuth.irreversible")}</p>
-                </div>
-                <div className="modal-actions">
-                  <button className="btn btn-ghost" onClick={() => setResetConfirm(false)}>{t("codexAuth.cancel")}</button>
-                  <button className="btn btn-primary" onClick={() => handleRedeem(resetPopup.id)} disabled={redeeming}>
-                    {redeeming ? t("codexAuth.redeeming") : t("codexAuth.useCredit")}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showAdd && (
-        <AddCodexAccountModal
-          apiBase={apiBase}
-          reauthAccountId={reauthId ?? undefined}
-          onClose={closeAddModal}
-          onAdded={handleAccountAdded}
-        />
-      )}
+      {modals}
     </div>
   );
 }

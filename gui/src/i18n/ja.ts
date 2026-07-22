@@ -18,6 +18,9 @@ export const ja: Record<TKey, string> = {
   "common.ok": "OK",
   "common.remove": "削除",
   "common.loading": "読み込み中…",
+  "common.yes": "はい",
+  "common.no": "いいえ",
+  "common.off": "オフ",
   "app.logoAria": "opencodex ロゴ",
   "app.claudeOn": "Claude オン",
   "app.claudeOff": "Claude オフ",
@@ -836,6 +839,11 @@ export const ja: Record<TKey, string> = {
   "codexAuth.creditNextBadge": "次",
   "codexAuth.creditGranted": "付与 {date}",
   "codexAuth.creditExpires": "失効 {date} (残り {days}日)",
+  "codexAuth.workspace.selectHint": "一覧からアカウントを選択して管理します。",
+  "codexAuth.workspace.poolAccounts": "プールアカウント",
+  "codexAuth.workspace.accountDetails": "アカウント詳細",
+  "codexAuth.email": "メール",
+  "codexAuth.plan": "プラン",
 
   // api access page
   "api.title": "API アクセス",
