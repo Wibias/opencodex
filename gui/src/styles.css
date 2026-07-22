@@ -20,6 +20,7 @@
 @import "./styles-claudecode-workspace.css";
 @import "./styles-usage-workspace.css";
 @import "./styles-logs-workspace.css";
+@import "./styles-models-workspace.css";
 
 :root {
   /* default: follow the OS; [data-theme] below pins color-scheme so light-dark() obeys it */
