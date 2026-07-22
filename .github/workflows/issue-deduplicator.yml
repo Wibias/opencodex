@@ -1,4 +1,4 @@
-name: Issue Deduplicator
+﻿name: Issue Deduplicator
 
 on:
   issues:
@@ -111,9 +111,14 @@ jobs:
             const fetched = JSON.parse(fs.readFileSync('existing-issues.json', 'utf8'));
             const validNums = new Set(fetched.map(i => String(i.number)));
 
+            if (!Array.isArray(parsed?.issues)) {
+              core.warning(`AI response has unexpected schema (issues is not an array): ${raw}`);
+              return;
+            }
+
             const currentNum = String(issue.number);
             const matches = [...new Set(
-              (Array.isArray(parsed?.issues) ? parsed.issues : [])
+              parsed.issues
                 .map(String)
                 .filter(n => n !== currentNum && validNums.has(n))
             )].slice(0, 5);
