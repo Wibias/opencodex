@@ -51,7 +51,10 @@ jobs:
 
             // Match "prefix:" or "prefix(scope):" at the start of the title.
             const match = title.match(/^([a-zA-Z]+)(?:\([^)]*\))?[!]?\s*:/);
-            const detected = match ? PREFIX_TO_LABEL[match[1].toLowerCase()] : null;
+            const key = match ? match[1].toLowerCase() : null;
+            const detected = key && Object.prototype.hasOwnProperty.call(PREFIX_TO_LABEL, key)
+              ? PREFIX_TO_LABEL[key]
+              : null;
 
             if (!detected) {
               // Clear any stale type labels left from a previous prefix.

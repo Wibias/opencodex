@@ -289,7 +289,13 @@ jobs:
           # Release notes are generated automatically from merged PR labels using
           # .github/release.yml categories (populated by pr-labeler.yml).
           if gh release view "$release_tag" >/dev/null 2>&1; then
-            gh release edit "$release_tag" --title "$release_tag" --generate-notes ${prerelease_flag:+$prerelease_flag}
+            # gh release edit does not support --generate-notes; generate the
+            # notes via the API first, then pass them through --notes-file.
+            notes_file="$(mktemp)"
+            gh api repos/"${GITHUB_REPOSITORY}"/releases/generate-notes \
+              -f tag_name="$release_tag" \
+              --jq '.body' > "$notes_file"
+            gh release edit "$release_tag" --title "$release_tag" --notes-file "$notes_file" ${prerelease_flag:+$prerelease_flag}
           else
             gh release create "$release_tag" --target "$GITHUB_SHA" --title "$release_tag" --generate-notes ${prerelease_flag:+$prerelease_flag}
           fi
