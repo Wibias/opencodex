@@ -431,6 +431,7 @@ export const ja: Record<TKey, string> = {
   "usage.card.cacheWriteTokens": "キャッシュ書き込み",
   "usage.card.coverage": "カバレッジ",
   "usage.card.activeDays": "アクティブ日数",
+  "usage.section.overview": "概要",
   "usage.section.heatmap": "日のアクティビティ",
   "usage.section.models": "モデル",
   "usage.section.providers": "プロバイダー",

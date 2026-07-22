@@ -548,6 +548,103 @@ function UsageCoveragePanel({ summary, t }: { summary: UsageSummaryTotals; t: TF
   );
 }
 
+/**
+ * Workspace layout for the Usage tab: a left rail lists the report sections
+ * (Overview, Models, Providers, Coverage) and the main pane renders the selected
+ * one. Section bodies reuse the same panel components as the classic stacked view.
+ */
+function UsageWorkspaceBody({
+  data,
+  heatmap,
+  weekBars,
+  activeDays,
+  filteredModels,
+  modelQuery,
+  onModelQuery,
+  sortedProviders,
+  range,
+  selectedSection,
+  onSelectSection,
+  locale,
+  t,
+}: {
+  data: UsageResponse;
+  heatmap: ReturnType<typeof buildHeatmap>;
+  weekBars: UsageDay[];
+  activeDays: number;
+  filteredModels: UsageModel[];
+  modelQuery: string;
+  onModelQuery: (query: string) => void;
+  sortedProviders: UsageProvider[];
+  range: Range;
+  selectedSection: string;
+  onSelectSection: (id: string) => void;
+  locale: Locale;
+  t: TFn;
+}) {
+  const sections = [
+    {
+      id: "overview",
+      label: t("usage.section.overview"),
+      meta: `${data.summary.requests}`,
+      body: (
+        <>
+          <UsageSummaryCards summary={data.summary} activeDays={activeDays} locale={locale} t={t} />
+          <UsageHeatmapPanel range={range} heatmap={heatmap} weekBars={weekBars} locale={locale} t={t} />
+        </>
+      ),
+    },
+    {
+      id: "models",
+      label: t("usage.section.models"),
+      meta: `${data.models.length}`,
+      body: <UsageModelsTable models={filteredModels} modelQuery={modelQuery} onModelQuery={onModelQuery} locale={locale} t={t} />,
+    },
+    {
+      id: "providers",
+      label: t("usage.section.providers"),
+      meta: `${data.providers.length}`,
+      body: <UsageProvidersTable providers={sortedProviders} locale={locale} t={t} />,
+    },
+    {
+      id: "coverage",
+      label: t("usage.section.coverage"),
+      meta: formatPct(data.summary.coverageRatio),
+      body: <UsageCoveragePanel summary={data.summary} t={t} />,
+    },
+  ];
+  const selected = sections.find(s => s.id === selectedSection) ?? sections[0];
+
+  return (
+    <div className="usage-workspace-shell">
+      <div className="usage-workspace-root">
+        <aside className="usage-workspace-rail" aria-label={t("usage.title")}>
+          <div className="usage-workspace-rail-header">
+            <span className="usage-workspace-rail-title">{t("usage.title")}</span>
+          </div>
+          <div className="usage-workspace-rail-list">
+            {sections.map(s => (
+              <button
+                key={s.id}
+                type="button"
+                className={`usage-workspace-rail-row${selectedSection === s.id ? " usage-workspace-rail-row--selected" : ""}`}
+                onClick={() => onSelectSection(s.id)}
+                aria-current={selectedSection === s.id ? "true" : undefined}
+              >
+                <span className="usage-workspace-rail-name">{s.label}</span>
+                <span className="usage-workspace-rail-meta">{s.meta}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+        <main className="usage-workspace-main">
+          <div className="usw-body">{selected.body}</div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
 export default function Usage({ apiBase }: { apiBase: string }) {
   const { t, locale } = useI18n();
   const [range, setRange] = useState<Range>("30d");
@@ -555,6 +652,24 @@ export default function Usage({ apiBase }: { apiBase: string }) {
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [modelQuery, setModelQuery] = useState("");
+  // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
+  const [workspaceView, setWorkspaceView] = useState(() => {
+    try {
+      return localStorage.getItem("ocx-usage-view") === "workspace";
+    } catch {
+      return false;
+    }
+  });
+  const [selectedSection, setSelectedSection] = useState("overview");
+  const toggleWorkspace = () => {
+    const next = !workspaceView;
+    try {
+      localStorage.setItem("ocx-usage-view", next ? "workspace" : "classic");
+    } catch {
+      /* ignore */
+    }
+    setWorkspaceView(next);
+  };
 
   const fetchUsage = useCallback(async (nextRange: Range, nextSurface: UsageSurface, signal: AbortSignal) => {
     setLoading(true);
@@ -608,7 +723,12 @@ export default function Usage({ apiBase }: { apiBase: string }) {
     <>
       <div className="page-head usage-head">
         <h2 id="usage-page-title">{t("usage.title")}</h2>
-        <UsageFilters surface={surface} range={range} onSurface={setSurface} onRange={setRange} t={t} />
+        <div className="row">
+          <UsageFilters surface={surface} range={range} onSurface={setSurface} onRange={setRange} t={t} />
+          <button className="btn btn-ghost btn-sm" onClick={toggleWorkspace}>
+            {workspaceView ? t("pws.classicToggle") : t("pws.workspaceToggle")}
+          </button>
+        </div>
       </div>
       <p className="page-sub">{t("usage.subtitle")}</p>
 
@@ -616,6 +736,22 @@ export default function Usage({ apiBase }: { apiBase: string }) {
         <EmptyState title={t("usage.loading")} />
       ) : !data || data.summary.requests === 0 ? (
         <EmptyState title={t("usage.empty")} />
+      ) : workspaceView ? (
+        <UsageWorkspaceBody
+          data={data}
+          heatmap={heatmap}
+          weekBars={weekBars}
+          activeDays={activeDays}
+          filteredModels={filteredModels}
+          modelQuery={modelQuery}
+          onModelQuery={setModelQuery}
+          sortedProviders={sortedProviders}
+          range={range}
+          selectedSection={selectedSection}
+          onSelectSection={setSelectedSection}
+          locale={locale}
+          t={t}
+        />
       ) : (
         <>
           <UsageSummaryCards summary={data.summary} activeDays={activeDays} locale={locale} t={t} />

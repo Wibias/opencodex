@@ -444,6 +444,7 @@ export const de = {
   "usage.card.cacheWriteTokens": "Cache-Schreiben",
   "usage.card.coverage": "Abdeckung",
   "usage.card.activeDays": "Aktive Tage",
+  "usage.section.overview": "Übersicht",
   "usage.section.heatmap": "Tägliche Aktivität",
   "usage.section.models": "Modelle",
   "usage.section.providers": "Anbieter",

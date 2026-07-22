@@ -466,6 +466,7 @@ export const en = {
   "usage.card.cacheWriteTokens": "cache writes",
   "usage.card.coverage": "Coverage",
   "usage.card.activeDays": "Active days",
+  "usage.section.overview": "Overview",
   "usage.section.heatmap": "Daily activity",
   "usage.section.models": "Models",
   "usage.section.providers": "Providers",
