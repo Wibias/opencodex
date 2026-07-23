@@ -736,7 +736,9 @@ dialog.modal-overlay::backdrop {
    instead of overflowing under the pinned Duration column. Individual column
    min-widths below still keep it readable; it scrolls horizontally only when a
    genuinely narrow viewport demands it. */
-table.logs-table { min-width: 0; }
+/* table-layout: fixed locks column widths (set via colgroup) so the virtualized
+   rows never make the browser re-measure columns while scrolling. */
+table.logs-table { table-layout: fixed; }
 .log-col-rate { min-width: 7ch; white-space: nowrap; }
 .log-col-cost { min-width: 10ch; white-space: nowrap; }
 /* Duration is the last column and the table overflows its container, so pin it
