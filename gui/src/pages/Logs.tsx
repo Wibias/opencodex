@@ -394,7 +394,7 @@ export default function Logs({ apiBase }: { apiBase: string }) {
                <th>{t("logs.col.provider")}</th>
                <th>{t("logs.col.status")}</th>
                 <th>{t("logs.col.request")}</th>
-               <th className="num">{t("logs.col.duration")}</th>
+               <th className="num log-col-duration">{t("logs.col.duration")}</th>
              </tr>
             </thead>
             <tbody>
@@ -469,7 +469,7 @@ export default function Logs({ apiBase }: { apiBase: string }) {
                     </span>
                  </td>
                   <td className="muted mono"><span className="log-reqid" title={log.requestId}>{log.requestId ?? "-"}</span></td>
-                 <td className="num">{log.durationMs}ms</td>
+                 <td className="num log-col-duration">{log.durationMs}ms</td>
                 </tr>
                 );
               })}
