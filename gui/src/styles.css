@@ -720,7 +720,11 @@ dialog.modal-overlay::backdrop {
 /* Logs table column tuning: model narrower (two-line OK), tokens wider */
 .log-col-model { max-width: 18ch; overflow-wrap: break-word; word-break: normal; }
 .log-col-tokens { min-width: 10ch; }
-table.logs-table { min-width: 960px; }
+/* Let the table fit its container so the Request column wraps in its own cell
+   instead of overflowing under the pinned Duration column. Individual column
+   min-widths below still keep it readable; it scrolls horizontally only when a
+   genuinely narrow viewport demands it. */
+table.logs-table { min-width: 0; }
 .log-col-rate { min-width: 7ch; white-space: nowrap; }
 .log-col-cost { min-width: 10ch; white-space: nowrap; }
 /* Duration is the last column and the table overflows its container, so pin it
@@ -728,7 +732,6 @@ table.logs-table { min-width: 960px; }
 .log-col-duration {
   position: sticky; right: 0;
   background: var(--surface);
-  box-shadow: -8px 0 8px -8px rgb(0 0 0 / 0.25);
   white-space: nowrap;
 }
 th.log-col-duration { z-index: 2; }
