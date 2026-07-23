@@ -383,6 +383,18 @@ export default function Logs({ apiBase }: { apiBase: string }) {
       ) : (
         <div ref={scrollContainerRef} className="tbl-wrap" style={{ overflowY: "auto", maxHeight: "calc(100vh - 260px)" }}>
           <table className="tbl logs-table">
+            <colgroup>
+              <col style={{ width: "11ch" }} />  {/* Time */}
+              <col style={{ width: "11ch" }} />  {/* Tokens */}
+              <col style={{ width: "8ch" }} />   {/* tok/s */}
+              <col style={{ width: "9ch" }} />   {/* ~$ */}
+              <col style={{ width: "18ch" }} />  {/* Model */}
+              <col style={{ width: "9ch" }} />   {/* Effort */}
+              <col style={{ width: "11ch" }} />  {/* Provider */}
+              <col style={{ width: "10ch" }} />  {/* Status */}
+              <col style={{ width: "15ch" }} />  {/* Request */}
+              <col style={{ width: "10ch" }} />  {/* Duration */}
+            </colgroup>
             <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--surface)" }}>
              <tr>
                <th>{t("logs.col.time")}</th>
