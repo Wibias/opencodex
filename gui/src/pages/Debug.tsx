@@ -228,12 +228,13 @@ export default function Debug({ apiBase, embedded }: { apiBase: string; embedded
         <div className="empty">{t("debug.loading")}</div>
       ) : (
         <div className="card" style={{ marginBottom: 16, padding: "12px 14px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+          {/* Toggles + stream buttons on one wrapping row; reset absolute top-right */}
+          <div style={{ position: "relative", paddingRight: "11rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px 16px" }}>
               {(["debug", "usage", "injection", "claude"] as const).map(flag => {
                 const checked = isDebugFlagEnabled(debug, flag);
                 return (
-                  <div key={flag} style={{ display: "inline-flex", alignItems: "center", gap: 10, minWidth: 220 }}>
+                  <div key={flag} style={{ display: "inline-flex", alignItems: "center", gap: 10, whiteSpace: "nowrap" }}>
                     <Switch
                       on={checked}
                       disabled={debugBusy}
@@ -244,43 +245,48 @@ export default function Debug({ apiBase, embedded }: { apiBase: string; embedded
                   </div>
                 );
               })}
+              {(debug.enabled || debug.usage || debug.injection) && (
+                <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                  {debug.enabled && (
+                    <button
+                      type="button"
+                      className={`btn btn-sm${stream === "provider" ? " btn-primary" : " btn-ghost"}`}
+                      onClick={() => setStream("provider")}
+                    >
+                      {t("debug.streamProvider")}
+                    </button>
+                  )}
+                  {debug.usage && (
+                    <button
+                      type="button"
+                      className={`btn btn-sm${stream === "usage" ? " btn-primary" : " btn-ghost"}`}
+                      onClick={() => setStream("usage")}
+                    >
+                      {t("debug.streamUsage")}
+                    </button>
+                  )}
+                  {debug.injection && (
+                    <button
+                      type="button"
+                      className={`btn btn-sm${stream === "injection" ? " btn-primary" : " btn-ghost"}`}
+                      onClick={() => setStream("injection")}
+                    >
+                      {t("debug.streamInjection")}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-            <button type="button" className="btn btn-ghost btn-sm" disabled={debugBusy} onClick={() => void resetDebug()}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={debugBusy}
+              onClick={() => void resetDebug()}
+              style={{ position: "absolute", top: 0, right: 0 }}
+            >
               {t("debug.reset")}
             </button>
           </div>
-
-          {(debug.enabled || debug.usage || debug.injection) && (
-            <div style={{ display: "inline-flex", gap: 6, marginTop: 12 }}>
-              {debug.enabled && (
-                <button
-                  type="button"
-                  className={`btn btn-sm${stream === "provider" ? " btn-primary" : " btn-ghost"}`}
-                  onClick={() => setStream("provider")}
-                >
-                  {t("debug.streamProvider")}
-                </button>
-              )}
-              {debug.usage && (
-                <button
-                  type="button"
-                  className={`btn btn-sm${stream === "usage" ? " btn-primary" : " btn-ghost"}`}
-                  onClick={() => setStream("usage")}
-                >
-                  {t("debug.streamUsage")}
-                </button>
-              )}
-              {debug.injection && (
-                <button
-                  type="button"
-                  className={`btn btn-sm${stream === "injection" ? " btn-primary" : " btn-ghost"}`}
-                  onClick={() => setStream("injection")}
-                >
-                  {t("debug.streamInjection")}
-                </button>
-              )}
-            </div>
-          )}
           {debug?.claude && (
             <>
               <div style={{ borderTop: "1px solid var(--border)", margin: "12px -14px 0" }} />
