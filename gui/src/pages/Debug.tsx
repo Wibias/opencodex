@@ -258,25 +258,6 @@ export default function Debug({ apiBase, embedded }: { apiBase: string; embedded
                   <span className="text-control">{t("debug.claude")}</span>
                 </div>
               ); })()}
-             {(debug.enabled || debug.usage || debug.injection) && (
-               <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                 {debug.enabled && (
-                   <button type="button" className={`btn btn-sm${stream === "provider" ? " btn-primary" : " btn-ghost"}`} onClick={() => setStream("provider")}>
-                     {t("debug.streamProvider")}
-                   </button>
-                 )}
-                 {debug.usage && (
-                   <button type="button" className={`btn btn-sm${stream === "usage" ? " btn-primary" : " btn-ghost"}`} onClick={() => setStream("usage")}>
-                     {t("debug.streamUsage")}
-                   </button>
-                 )}
-                 {debug.injection && (
-                   <button type="button" className={`btn btn-sm${stream === "injection" ? " btn-primary" : " btn-ghost"}`} onClick={() => setStream("injection")}>
-                     {t("debug.streamInjection")}
-                   </button>
-                 )}
-               </div>
-             )}
               {/* Always rendered to reserve row height; visibility hides when no stream is active */}
               <div style={{ display: "inline-flex", gap: 6, alignItems: "center", visibility: (debug.enabled || debug.usage || debug.injection) ? "visible" : "hidden" }}>
                 {[
