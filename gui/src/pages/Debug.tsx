@@ -228,7 +228,16 @@ export default function Debug({ apiBase, embedded }: { apiBase: string; embedded
         <div className="empty">{t("debug.loading")}</div>
       ) : (
         <div className="card" style={{ marginBottom: 16, padding: "12px 14px" }}>
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", paddingRight: "11rem" }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={debugBusy}
+              onClick={() => void resetDebug()}
+              style={{ position: "absolute", top: 0, right: 0 }}
+            >
+              {t("debug.reset")}
+            </button>
             {/* Row 1: Provider / Usage / Injection */}
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
               {(["debug", "usage", "injection"] as const).map(flag => {
@@ -269,15 +278,6 @@ export default function Debug({ apiBase, embedded }: { apiBase: string; embedded
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={debugBusy}
-              onClick={() => void resetDebug()}
-              style={{ position: "absolute", top: 0, right: 0 }}
-            >
-              {t("debug.reset")}
-            </button>
           </div>
           {debug?.claude && (
             <>
