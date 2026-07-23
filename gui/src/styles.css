@@ -744,7 +744,6 @@ table.logs-table { min-width: 0; }
 .log-col-duration {
   position: sticky; right: 0;
   background: var(--surface);
-  box-shadow: -8px 0 8px -8px rgb(0 0 0 / 0.25);
   white-space: nowrap;
 }
 th.log-col-duration { z-index: 2; }
