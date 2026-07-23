@@ -258,23 +258,33 @@ export default function Debug({ apiBase, embedded }: { apiBase: string; embedded
                   <span className="text-control">{t("debug.claude")}</span>
                 </div>
               ); })()}
-              {/* Always rendered to reserve row height; visibility hides when no stream is active */}
-              <div style={{ display: "inline-flex", gap: 6, alignItems: "center", visibility: (debug.enabled || debug.usage || debug.injection) ? "visible" : "hidden" }}>
-                {[
-                  { flag: "enabled" as const, key: "provider", label: t("debug.streamProvider") },
-                  { flag: "usage" as const, key: "usage", label: t("debug.streamUsage") },
-                  { flag: "injection" as const, key: "injection", label: t("debug.streamInjection") },
-                ].map(({ flag, key, label }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`btn btn-sm${stream === key ? " btn-primary" : " btn-ghost"}`}
-                    onClick={() => setStream(key as typeof stream)}
-                    style={{ display: debug[flag] ? undefined : "none" }}
-                  >
-                    {label}
-                  </button>
-                ))}
+              {/* Always rendered, always occupying space -- visibility on both container and
+                  individual buttons so the row height never changes when flags toggle */}
+              <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm${stream === "provider" ? " btn-primary" : " btn-ghost"}`}
+                  onClick={() => setStream("provider")}
+                  style={{ visibility: debug.enabled ? "visible" : "hidden" }}
+                >
+                  {t("debug.streamProvider")}
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm${stream === "usage" ? " btn-primary" : " btn-ghost"}`}
+                  onClick={() => setStream("usage")}
+                  style={{ visibility: debug.usage ? "visible" : "hidden" }}
+                >
+                  {t("debug.streamUsage")}
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm${stream === "injection" ? " btn-primary" : " btn-ghost"}`}
+                  onClick={() => setStream("injection")}
+                  style={{ visibility: debug.injection ? "visible" : "hidden" }}
+                >
+                  {t("debug.streamInjection")}
+                </button>
               </div>
             </div>
           </div>
