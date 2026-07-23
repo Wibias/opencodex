@@ -19,7 +19,6 @@
 @import "./styles-codexauth-workspace.css";
 @import "./styles-claudecode-workspace.css";
 @import "./styles-usage-workspace.css";
-@import "./styles-logs-workspace.css";
 @import "./styles-models-workspace.css";
 @import "./styles-dashboard-workspace.css";
 
@@ -736,6 +735,19 @@ dialog.modal-overlay::backdrop {
 table.logs-table { min-width: 960px; }
 .log-col-rate { min-width: 7ch; white-space: nowrap; }
 .log-col-cost { min-width: 10ch; white-space: nowrap; }
+/* Duration is the last column and the table overflows its container, so pin it
+   to the right edge — it stays visible while the middle columns scroll. */
+.log-col-duration {
+  position: sticky; right: 0;
+  background: var(--surface);
+  box-shadow: -8px 0 8px -8px rgb(0 0 0 / 0.25);
+  white-space: nowrap;
+}
+th.log-col-duration { z-index: 2; }
+td.log-col-duration { z-index: 1; }
+/* Row hover is translucent; give the pinned cell an opaque equivalent so scrolled
+   content never shows through it. */
+.tbl tbody tr:hover td.log-col-duration { background: color-mix(in srgb, var(--surface), var(--text) 3%); }
 .log-status-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 7ch; line-height: var(--leading-tight); }
 .log-detail-btn {
   background: none; border: none; padding: 0; cursor: pointer;

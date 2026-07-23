@@ -73,7 +73,6 @@ const WORKSPACE_VIEW_KEYS: readonly string[] = [
   "ocx-apikeys-view",
   "ocx-claudecode-view",
   "ocx-usage-view",
-  "ocx-logs-view",
   "ocx-models-view",
   "ocx-dashboard-view",
 ];

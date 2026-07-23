@@ -259,15 +259,6 @@ export default function Logs({ apiBase }: { apiBase: string }) {
   // The hash is the source of truth for the active tab (#logs vs #logs/debug),
   // so refresh/bookmark/back-forward keep the tab choice.
   const [tab, setTab] = useState<LogsTab>(readTabFromHash);
-  // Workspace vs Classic: localStorage is the source of truth (same pattern as Providers).
-  const [workspaceView] = useState(() => {
-    try {
-      return localStorage.getItem("ocx-logs-view") === "workspace";
-    } catch {
-      return false;
-    }
-  });
-
   useEffect(() => {
     const onHash = () => setTab(readTabFromHash());
     window.addEventListener("hashchange", onHash);
@@ -355,8 +346,8 @@ export default function Logs({ apiBase }: { apiBase: string }) {
                <th>{t("logs.col.effort")}</th>
                <th>{t("logs.col.provider")}</th>
                <th>{t("logs.col.status")}</th>
-                <th>{t("logs.col.request")}</th>
-               <th className="num">{t("logs.col.duration")}</th>
+               <th>{t("logs.col.request")}</th>
+               <th className="num log-col-duration">{t("logs.col.duration")}</th>
              </tr>
             </thead>
             <tbody>
@@ -431,7 +422,7 @@ export default function Logs({ apiBase }: { apiBase: string }) {
                     </span>
                  </td>
                   <td className="muted mono"><span className="log-reqid" title={log.requestId}>{log.requestId ?? "-"}</span></td>
-                 <td className="num">{log.durationMs}ms</td>
+                 <td className="num log-col-duration">{log.durationMs}ms</td>
                 </tr>
                 );
               })}
@@ -452,52 +443,6 @@ export default function Logs({ apiBase }: { apiBase: string }) {
   );
 
   const debugBody = <Debug apiBase={apiBase} embedded />;
-
-  if (workspaceView) {
-    return (
-      <div className="logs-workspace-shell">
-        <div className="page-head">
-          <h2>{t("nav.logs")}</h2>
-          <div className="row">
-            {tab === "logs" && (
-              <label className="muted text-control" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
-                {t("logs.autoRefresh")}
-              </label>
-            )}
-          </div>
-        </div>
-        <div className="logs-workspace-root">
-          <aside className="logs-workspace-rail" aria-label={t("nav.logs")}>
-            <div className="logs-workspace-rail-header">
-              <span className="logs-workspace-rail-title">{t("nav.logs")}</span>
-            </div>
-            <div className="logs-workspace-rail-list">
-              <button
-                type="button"
-                className={`logs-workspace-rail-row${tab === "logs" ? " logs-workspace-rail-row--selected" : ""}`}
-                onClick={() => selectTab("logs")}
-                aria-current={tab === "logs" ? "true" : undefined}
-              >
-                <span className="logs-workspace-rail-name">{t("logs.tabLogs")}</span>
-              </button>
-              <button
-                type="button"
-                className={`logs-workspace-rail-row${tab === "debug" ? " logs-workspace-rail-row--selected" : ""}`}
-                onClick={() => selectTab("debug")}
-                aria-current={tab === "debug" ? "true" : undefined}
-              >
-                <span className="logs-workspace-rail-name">{t("logs.tabDebug")}</span>
-              </button>
-            </div>
-          </aside>
-          <main className="logs-workspace-main">
-            <div className="lgw-body">{tab === "debug" ? debugBody : logsBody}</div>
-          </main>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <>
