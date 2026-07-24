@@ -39,14 +39,15 @@ export function computeSelectMenuStyle(
   const vw = viewportWidth();
 
   if (placement === "right") {
-    const spaceBelow = vh - trigger.bottom - VIEWPORT_PAD_PX;
-    const overflowBelow = trigger.top + measuredHeight - (vh - VIEWPORT_PAD_PX);
-    const openAbove = overflowBelow > 0 && overflowBelow > spaceBelow;
+    const spaceBelow = vh - trigger.top - VIEWPORT_PAD_PX;
+    const spaceAbove = trigger.top - VIEWPORT_PAD_PX;
+    const openAbove = measuredHeight + FLIP_GAP_PX > spaceBelow && spaceAbove > spaceBelow;
+    const left = Math.max(VIEWPORT_PAD_PX, Math.min(trigger.right + 6, vw - BESIDE_MIN_WIDTH_PX - VIEWPORT_PAD_PX));
 
     if (openAbove) {
       return {
         position: "fixed",
-        left: trigger.right + 6,
+        left,
         bottom: vh - trigger.top + FLIP_GAP_PX,
         minWidth: BESIDE_MIN_WIDTH_PX,
         maxHeight: Math.max(MIN_MENU_HEIGHT_PX, Math.min(MAX_MENU_HEIGHT_PX, trigger.top - VIEWPORT_PAD_PX - MENU_GAP_PX)),
@@ -56,7 +57,7 @@ export function computeSelectMenuStyle(
     return {
       position: "fixed",
       top: trigger.top,
-      left: trigger.right + 6,
+      left,
       minWidth: BESIDE_MIN_WIDTH_PX,
       maxHeight: Math.max(MIN_MENU_HEIGHT_PX, Math.min(MAX_MENU_HEIGHT_PX, vh - trigger.top - VIEWPORT_PAD_PX)),
     };
