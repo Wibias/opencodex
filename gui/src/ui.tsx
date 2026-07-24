@@ -25,7 +25,7 @@ export function Notice({ tone, children }: { tone: "ok" | "err"; children: React
 
 export interface SelectOption { value: string; label: React.ReactNode }
 
-export function Select({ value, options, onChange, disabled, label, style, align, placement, dropdownStyle }: {
+export function Select({ value, options, onChange, disabled, label, style, align, placement, dropdownStyle, portal = false }: {
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
@@ -35,6 +35,7 @@ export function Select({ value, options, onChange, disabled, label, style, align
   align?: "left" | "right";
   placement?: "below" | "right";
   dropdownStyle?: CSSProperties;
+  portal?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
@@ -44,6 +45,7 @@ export function Select({ value, options, onChange, disabled, label, style, align
   const current = options.find(o => o.value === value);
 
   const reposition = useCallback((menuHeight?: number) => {
+    if (!portal) return;
     const trigger = triggerRef.current;
     if (!trigger) return;
     setMenuStyle(computeSelectMenuStyle(trigger.getBoundingClientRect(), {
@@ -51,7 +53,7 @@ export function Select({ value, options, onChange, disabled, label, style, align
       placement,
       menuHeight,
     }));
-  }, [align, placement]);
+  }, [align, placement, portal]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,7 +69,7 @@ export function Select({ value, options, onChange, disabled, label, style, align
   }, [open]);
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || !portal) return;
     reposition();
     const onViewportChange = () => reposition(menuRef.current?.offsetHeight);
     window.addEventListener("resize", onViewportChange);
@@ -76,10 +78,10 @@ export function Select({ value, options, onChange, disabled, label, style, align
       window.removeEventListener("resize", onViewportChange);
       window.removeEventListener("scroll", onViewportChange, true);
     };
-  }, [open, options.length, reposition]);
+  }, [open, options.length, portal, reposition]);
 
   useLayoutEffect(() => {
-    if (!open || !menuRef.current || !triggerRef.current) return;
+    if (!open || !portal || !menuRef.current || !triggerRef.current) return;
     const nextHeight = menuRef.current.offsetHeight;
     if (!nextHeight) return;
     const nextStyle = computeSelectMenuStyle(triggerRef.current.getBoundingClientRect(), {
@@ -91,15 +93,15 @@ export function Select({ value, options, onChange, disabled, label, style, align
       if (prev?.top === nextStyle.top && prev?.bottom === nextStyle.bottom && prev?.maxHeight === nextStyle.maxHeight) return prev;
       return nextStyle;
     });
-  }, [align, open, options.length, placement]);
+  }, [align, open, options.length, placement, portal]);
 
   const dropdown = open ? (
     <div
       ref={menuRef}
-      className={`select-dropdown select-dropdown-portal${align === "right" ? " select-dropdown-right" : ""}${placement === "right" ? " select-dropdown-beside" : ""}`}
+      className={`select-dropdown${portal ? " select-dropdown-portal" : ""}${align === "right" ? " select-dropdown-right" : ""}${placement === "right" ? " select-dropdown-beside" : ""}`}
       role="listbox"
       aria-label={label}
-      style={{ ...menuStyle, ...dropdownStyle }}
+      style={portal ? { ...menuStyle, zIndex: 60, ...dropdownStyle } : dropdownStyle}
     >
       {options.map(o => (
         <button
@@ -129,7 +131,7 @@ export function Select({ value, options, onChange, disabled, label, style, align
         <span>{current?.label ?? value}</span>
         <IconChevron style={{ width: 12, height: 12, color: "var(--muted)", transform: open ? "rotate(90deg)" : "none", transition: "transform .12s" }} />
       </button>
-      {dropdown && createPortal(dropdown, document.body)}
+      {portal ? (dropdown && createPortal(dropdown, document.body)) : dropdown}
     </div>
   );
 }

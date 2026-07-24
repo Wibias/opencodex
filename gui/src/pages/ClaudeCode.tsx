@@ -230,6 +230,7 @@ export default function ClaudeCode({ apiBase }: { apiBase: string }) {
             onChange={v => setState({ ...state, authMode: v as ClaudeCodeState["authMode"] })}
             label={t("claude.authMode")}
             style={{ minWidth: 220 }}
+            portal
           />
         </div>
 
@@ -282,6 +283,7 @@ export default function ClaudeCode({ apiBase }: { apiBase: string }) {
               onChange={v => setState({ ...state, autoCompactWindow: v === "" ? null : Number(v) })}
               label={t("claude.autoCompactWindow")}
               style={{ minWidth: 130 }}
+              portal
             />
           </div>
         )}
@@ -320,6 +322,7 @@ export default function ClaudeCode({ apiBase }: { apiBase: string }) {
                       : { ...override, backend: value === "auto" ? undefined : value as SidecarBackend },
                   })}
                   label={t("dash.sidecarBackend")}
+                  portal
                 />
                 <input
                   className="input mono"
